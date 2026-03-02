@@ -130,6 +130,56 @@ class LiveGamesService:
         self._leaderboards_repo = leaderboards_repo or LeaderboardsRepository()
         self._log = structlog.get_logger("live_games")
 
+    async def _fetch_active_game_with_fallback(
+        self,
+        *,
+        client: RiotClient,
+        platform: str,
+        puuid: str,
+        player_id: str,
+    ) -> dict | None:
+        try:
+            summoner = await client.get_summoner_by_puuid(platform, puuid)
+        except Exception:
+            self._log.exception(
+                "live_game_summoner_lookup_failed",
+                player_id=player_id,
+                platform=platform,
+            )
+            raise
+
+        summoner_id = str(summoner.get("id") or "").strip()
+        if summoner_id:
+            try:
+                return await client.get_active_game(platform, summoner_id)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    return None
+                raise
+
+        self._log.warning(
+            "live_game_missing_summoner_id_using_puuid_fallback",
+            player_id=player_id,
+            platform=platform,
+        )
+        try:
+            game = await client.get_active_game(platform, puuid)
+            self._log.warning(
+                "live_game_puuid_fallback_succeeded",
+                player_id=player_id,
+                platform=platform,
+            )
+            return game
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                self._log.info(
+                    "live_game_puuid_fallback_not_found",
+                    player_id=player_id,
+                    platform=platform,
+                )
+                return None
+            raise
+
     async def _enrich_live_game_payload(
         self,
         *,
@@ -242,18 +292,24 @@ class LiveGamesService:
                     continue
 
                 try:
-                    summoner = await client.get_summoner_by_puuid(
+                    game = await self._fetch_active_game_with_fallback(
+                        client=client,
                         p.platform,  # type: ignore[arg-type]
                         p.puuid,
+                        str(p.id),
                     )
-                    summoner_id = str(summoner.get("id") or "").strip()
-                    if not summoner_id:
-                        raise ValueError("missing_summoner_id")
+                    if game is None:
+                        await self._repo.upsert_state(
+                            session,
+                            tracked_player_id=p.id,
+                            platform=p.platform,
+                            status="none",
+                            game_id=None,
+                            payload=None,
+                        )
+                        updated += 1
+                        continue
 
-                    game = await client.get_active_game(
-                        p.platform,  # type: ignore[arg-type]
-                        summoner_id,
-                    )
                     game_id = str(game.get("gameId") or "")
                     payload = game
                     if game_id:
@@ -276,24 +332,13 @@ class LiveGamesService:
                     )
                     updated += 1
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 404:
-                        await self._repo.upsert_state(
-                            session,
-                            tracked_player_id=p.id,
-                            platform=p.platform,
-                            status="none",
-                            game_id=None,
-                            payload=None,
-                        )
-                        updated += 1
-                    else:
-                        errors += 1
-                        self._log.error(
-                            "live_game_fetch_http_error",
-                            status=e.response.status_code,
-                            player_id=str(p.id),
-                            platform=p.platform,
-                        )
+                    errors += 1
+                    self._log.error(
+                        "live_game_fetch_http_error",
+                        status=e.response.status_code,
+                        player_id=str(p.id),
+                        platform=p.platform,
+                    )
                 except Exception:
                     errors += 1
                     self._log.exception(

@@ -204,6 +204,59 @@ async def test_refresh_marks_player_none_on_404(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_refresh_marks_player_none_when_summoner_id_missing_and_puuid_fallback_404(
+    monkeypatch,
+) -> None:
+    player = SimpleNamespace(
+        id=uuid.uuid4(),
+        active=True,
+        puuid="tracked-puuid",
+        platform="euw1",
+    )
+    repo = FakeLiveGamesRepository()
+    players_repo = FakeTrackedPlayersRepository([player])
+
+    class FakeRiotClient:
+        instances: list["FakeRiotClient"] = []
+
+        def __init__(self, api_key: str) -> None:
+            self.api_key = api_key
+            self.calls: list[tuple[str, str]] = []
+            self.__class__.instances.append(self)
+
+        async def get_summoner_by_puuid(self, platform: str, puuid: str) -> dict:
+            return {"puuid": puuid}
+
+        async def get_active_game(self, platform: str, player_id: str) -> dict:
+            self.calls.append((platform, player_id))
+            raise _http_404()
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "app.features.live_games.service.get_settings",
+        lambda: SimpleNamespace(riot_api_key="test-key"),
+    )
+    monkeypatch.setattr("app.features.live_games.service.RiotClient", FakeRiotClient)
+
+    service = LiveGamesService(repo, players_repo)
+    result = await service.refresh(session=None)
+
+    assert result == {"updated": 1, "skipped": 0, "errors": 0, "targets": 1}
+    assert FakeRiotClient.instances[0].calls == [("euw1", "tracked-puuid")]
+    assert repo.calls == [
+        {
+            "tracked_player_id": player.id,
+            "platform": "euw1",
+            "status": "none",
+            "game_id": None,
+            "payload": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_list_includes_discord_name_and_rank_snapshots() -> None:
     player = SimpleNamespace(
         id=uuid.uuid4(),
