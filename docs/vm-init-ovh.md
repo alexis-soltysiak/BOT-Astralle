@@ -142,11 +142,7 @@ With the current IP-only setup:
 Use both compose files:
 
 ```bash
-docker compose \
-  --env-file .env.compose \
-  -f docker-compose.yml \
-  -f docker-compose.prod.yml \
-  up -d --build
+docker compose --env-file .env.compose -f docker-compose.prod.yml up -d --build
 ```
 
 Verify:
@@ -213,11 +209,7 @@ NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
 Then rebuild:
 
 ```bash
-docker compose \
-  --env-file .env.compose \
-  -f docker-compose.yml \
-  -f docker-compose.prod.yml \
-  up -d --build
+docker compose --env-file .env.compose -f docker-compose.prod.yml up -d --build
 ```
 
 ## 9. What should never be public
@@ -228,4 +220,4 @@ docker compose \
 - Raw backend `8000`
 - Raw frontend `3000`
 
-The prod compose override in this repo already keeps `5432` and `6379` off the public network and binds `8000` and `3000` to `127.0.0.1` only.
+The production compose file in this repo already keeps `5432` and `6379` off the public network and binds `8000` and `3000` to `127.0.0.1` only.

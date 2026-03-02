@@ -163,7 +163,7 @@ Nginx security baseline:
 3. Create `.env.compose` from `.env.compose.example`.
 4. Fill real production values.
 5. Adjust Docker Compose or override it so Postgres and Redis are not publicly published.
-6. Start the stack with `docker compose --env-file .env.compose up -d --build`.
+6. Start the stack with `docker compose --env-file .env.compose -f docker-compose.prod.yml up -d --build`.
 7. Put Nginx in front with HTTPS.
 8. Verify:
    - frontend loads
