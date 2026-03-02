@@ -119,6 +119,7 @@ POSTGRES_PASSWORD=change-this-to-a-long-random-password
 
 CORS_ALLOWED_ORIGINS=["http://149.202.57.147"]
 NEXT_PUBLIC_BACKEND_BASE_URL=http://149.202.57.147
+BACKEND_PROXY_SECRET=change-this-to-a-long-random-secret
 
 RIOT_API_KEY=your-riot-key
 
@@ -168,6 +169,12 @@ Create a basic-auth user:
 sudo htpasswd -c /etc/nginx/.htpasswd-astralle admin
 ```
 
+Before installing the Nginx config, replace the backend proxy secret placeholder:
+
+```bash
+sed -i 's|__BACKEND_PROXY_SECRET__|change-this-to-a-long-random-secret|' infra/nginx/ip-single-host.conf.example
+```
+
 Install the IP-based config:
 
 ```bash
@@ -204,6 +211,7 @@ Values to update in `.env.compose`:
 ```env
 CORS_ALLOWED_ORIGINS=["https://front.your-domain.tld"]
 NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
+BACKEND_PROXY_SECRET=change-this-to-a-long-random-secret
 ```
 
 Then rebuild:
@@ -221,3 +229,7 @@ docker compose --env-file .env.compose -f docker-compose.prod.yml up -d --build
 - Raw frontend `3000`
 
 The production compose file in this repo already keeps `5432` and `6379` off the public network and binds `8000` and `3000` to `127.0.0.1` only.
+
+## 10. Postgres backups
+
+See [docs/postgres-backups.md](postgres-backups.md) for a simple daily backup workflow.

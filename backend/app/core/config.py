@@ -29,6 +29,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+    backend_proxy_secret: str = ""
 
     riot_api_key: str = ""
 

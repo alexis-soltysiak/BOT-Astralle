@@ -79,3 +79,4 @@ Services exposes :
 
 Voir [docs/deployment-security-checklist.md](docs/deployment-security-checklist.md) pour la checklist GitHub + VM, la configuration des URLs publiques et les recommandations de securisation backend/frontend/Discord/Postgres/Redis.
 Pour l'initialisation de la VM OVH et un premier deploiement sur IP seule, voir aussi [docs/vm-init-ovh.md](docs/vm-init-ovh.md).
+Pour les sauvegardes Postgres, voir [docs/postgres-backups.md](docs/postgres-backups.md).

@@ -3,11 +3,12 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
 from app.core.config import get_settings
 from app.core.database import close_db, get_sessionmaker, init_db, ping_db
 from app.core.logging import configure_logging
+from app.core.security import require_backend_proxy_secret
 from app.features.jobs.api import router as jobs_router
 from app.features.jobs.repository import JobsRepository
 from app.features.jobs.service import JobsService
@@ -59,13 +60,15 @@ def create_app() -> FastAPI:
     log = structlog.get_logger("backend")
     log.info("app_created", env=settings.env)
 
-    app.include_router(tracked_players_router, prefix="/api")
-    app.include_router(jobs_router, prefix="/api")
-    app.include_router(leaderboards_router, prefix="/api")
-    app.include_router(live_games_router, prefix="/api")
-    app.include_router(matches_router, prefix="/api")
-    app.include_router(publications_router, prefix="/api")
-    app.include_router(discord_bindings_router, prefix="/api")
+    api_dependencies = [Depends(require_backend_proxy_secret)]
+
+    app.include_router(tracked_players_router, prefix="/api", dependencies=api_dependencies)
+    app.include_router(jobs_router, prefix="/api", dependencies=api_dependencies)
+    app.include_router(leaderboards_router, prefix="/api", dependencies=api_dependencies)
+    app.include_router(live_games_router, prefix="/api", dependencies=api_dependencies)
+    app.include_router(matches_router, prefix="/api", dependencies=api_dependencies)
+    app.include_router(publications_router, prefix="/api", dependencies=api_dependencies)
+    app.include_router(discord_bindings_router, prefix="/api", dependencies=api_dependencies)
 
 
     @app.get("/")

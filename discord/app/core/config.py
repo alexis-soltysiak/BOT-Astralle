@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     discord_token: str = ""
     discord_application_id: int
     backend_base_url: str = "http://localhost:8000"
+    backend_proxy_secret: str = ""
 
     discord_consumer_id: str = "discord-bot-dev"
     publish_poll_interval_seconds: int = 5

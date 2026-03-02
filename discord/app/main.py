@@ -231,7 +231,10 @@ async def run() -> None:
         structlog.get_logger("discord").error("missing_discord_token")
         return
 
-    backend = BackendClient(settings.backend_base_url)
+    backend = BackendClient(
+        settings.backend_base_url,
+        proxy_secret=settings.backend_proxy_secret,
+    )
     app = App(backend)
     try:
         await app.start(settings.discord_token)

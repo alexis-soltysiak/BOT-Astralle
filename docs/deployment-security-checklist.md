@@ -45,6 +45,7 @@ POSTGRES_PASSWORD=<strong-random-password>
 
 CORS_ALLOWED_ORIGINS=["https://front.your-domain.tld"]
 NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
+BACKEND_PROXY_SECRET=<long-random-shared-secret>
 
 RIOT_API_KEY=<riot-api-key>
 
@@ -76,6 +77,12 @@ Before public exposure, add one of these:
 - A reverse proxy basic auth in front of the admin UI and API.
 - An app-level admin token for write endpoints.
 - A proper identity provider later if the project grows.
+
+This repo now supports a backend proxy secret:
+
+- Nginx injects `X-Backend-Proxy-Secret` to `/api/`
+- the backend rejects API requests without the expected secret
+- the Discord bot sends the same secret for internal service-to-service calls
 
 Minimum backend controls:
 
@@ -121,6 +128,8 @@ Minimum backup strategy:
 
 - Daily `pg_dump` retained for several days.
 - One off-VM copy if the data matters.
+
+For the concrete VM backup workflow in this repo, see [docs/postgres-backups.md](postgres-backups.md).
 
 ## 9. Redis hardening
 
