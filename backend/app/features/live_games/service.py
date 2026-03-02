@@ -294,9 +294,9 @@ class LiveGamesService:
                 try:
                     game = await self._fetch_active_game_with_fallback(
                         client=client,
-                        p.platform,  # type: ignore[arg-type]
-                        p.puuid,
-                        str(p.id),
+                        platform=p.platform,  # type: ignore[arg-type]
+                        puuid=p.puuid,
+                        player_id=str(p.id),
                     )
                     if game is None:
                         await self._repo.upsert_state(
