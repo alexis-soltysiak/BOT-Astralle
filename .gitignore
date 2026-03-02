@@ -1,0 +1,63 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.compose.example
+!**/.env.example
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+
+# Python packaging and build artifacts
+build/
+dist/
+site/
+uv.lock
+htmlcov/
+.coverage
+.coverage.*
+.eggs/
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+
+# Test and runtime artifacts
+*.log
+*.out
+*.pid
+*.sqlite3
+*.db
+
+# Local media assets
+media/
+
+# Frontend and JavaScript tooling
+node_modules/
+.next/
+out/
+.turbo/
+coverage/
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

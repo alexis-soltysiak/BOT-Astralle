@@ -1,0 +1,579 @@
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from typing import Any
+
+import discord
+
+from app.core.emoji_resolver import EmojiResolver
+from app.features.scoring.score_image import make_score_png
+from app.features.scoring.view import MatchScoreBreakdownView
+
+
+SUMMONER_SPELL_STEMS = {
+    1: "SummonerBoost",
+    3: "SummonerExhaust",
+    4: "SummonerFlash",
+    6: "SummonerHaste",
+    7: "SummonerHeal",
+    11: "SummonerSmite",
+    12: "SummonerTeleport",
+    13: "SummonerMana",
+    14: "SummonerDot",
+    21: "SummonerBarrier",
+    30: "SummonerPoroThrow",
+    31: "SummonerPoroRecall",
+    32: "SummonerSnowball",
+    39: "SummonerSnowURFSnowball_Mark",
+    2201: "SummonerCherryFlash",
+    2202: "SummonerCherryHold",
+}
+
+RUNE_STYLE_STEMS = {
+    8000: "7201_Precision",
+    8100: "7200_Domination",
+    8200: "7202_Sorcery",
+    8300: "7203_Whimsy",
+    8400: "7204_Resolve",
+}
+
+KEYSTONE_STEMS = {
+    8005: "PressTheAttack",
+    8008: "LethalTempoTemp",
+    8010: "Conqueror",
+    8021: "FleetFootwork",
+    8112: "Electrocute",
+    8128: "DarkHarvest",
+    8214: "SummonAery",
+    8229: "ArcaneComet",
+    8230: "PhaseRush",
+    8351: "GlacialAugment",
+    8360: "UnsealedSpellbook",
+    8369: "FirstStrike",
+    8437: "GraspOfTheUndying",
+    8439: "VeteranAftershock",
+    8465: "Guardian",
+    9923: "HailOfBlades",
+}
+
+CATEGORY_META = [
+    ("global", "Global"),
+    ("vs_opponent", "Vs Opponent"),
+    ("objectives", "Objectives"),
+    ("team", "Team"),
+    ("role", "Role"),
+]
+UNSCORED_MODE_TOKENS = ("arena", "cherry")
+BLANK = "\u200b"
+QUEUE_LABELS = {
+    420: "SoloQ",
+    440: "Flex",
+    450: "ARAM",
+    1700: "Arena",
+}
+RANK_ICON = {
+    1: "1\uFE0F\u20E3",
+    2: "2\uFE0F\u20E3",
+    3: "3\uFE0F\u20E3",
+    4: "4\uFE0F\u20E3",
+    5: "5\uFE0F\u20E3",
+    6: "6\uFE0F\u20E3",
+    7: "7\uFE0F\u20E3",
+    8: "8\uFE0F\u20E3",
+    9: "9\uFE0F\u20E3",
+    10: "\U0001F51F",
+}
+EMOJI_CDN_TEMPLATE = "https://cdn.discordapp.com/emojis/{emoji_id}.png?quality=lossless"
+
+
+def _slug(value: str) -> str:
+    chars: list[str] = []
+    prev_us = False
+    for ch in str(value or ""):
+        if ch.isalnum():
+            chars.append(ch.lower())
+            prev_us = False
+            continue
+        if not prev_us:
+            chars.append("_")
+            prev_us = True
+    return "".join(chars).strip("_")
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return None
+
+
+def _safe_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).strip())
+    except Exception:
+        return 0.0
+
+
+def _fmt_duration(seconds: Any) -> str:
+    total = _safe_int(seconds)
+    if total is None or total <= 0:
+        return "?"
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    return f"{minutes}m {secs:02d}s"
+
+
+def _fmt_match_datetime(timestamp_ms: Any) -> str | None:
+    raw = _safe_int(timestamp_ms)
+    if raw is None or raw <= 0:
+        return None
+    try:
+        dt = datetime.fromtimestamp(raw / 1000).astimezone()
+    except Exception:
+        return None
+    return dt.strftime("%d/%m/%Y %H:%M")
+
+
+def _kda(p: dict) -> str:
+    k = p.get("kills")
+    d = p.get("deaths")
+    a = p.get("assists")
+    if k is None or d is None or a is None:
+        return "?"
+    return f"{k}/{d}/{a}"
+
+
+def _payload_for(p: dict) -> dict:
+    payload = p.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _name_for(p: dict, tracked_by_puuid: dict[str, dict]) -> str:
+    puuid = str(p.get("puuid") or "")
+    tp = tracked_by_puuid.get(puuid) or {}
+    name = str(tp.get("discord_display_name") or "").strip()
+    if name:
+        return name
+    if tp.get("game_name") and tp.get("tag_line"):
+        return f"{tp.get('game_name')}#{tp.get('tag_line')}"
+    gn = p.get("riot_id_game_name") or "?"
+    tl = p.get("riot_id_tag_line") or "?"
+    return f"{gn}#{tl}"
+
+
+def _role_for(participant: dict, score_payload: dict) -> str:
+    role = str(score_payload.get("role") or "").upper().strip()
+    if role in {"TOP", "JUNGLE", "MID", "ADC", "SUPPORT"}:
+        return role
+    payload = _payload_for(participant)
+    raw = str(payload.get("teamPosition") or payload.get("individualPosition") or "").upper().strip()
+    if raw == "MIDDLE":
+        return "MID"
+    if raw in {"BOTTOM", "BOT"}:
+        return "ADC"
+    if raw == "UTILITY":
+        return "SUPPORT"
+    if raw in {"TOP", "JUNGLE", "MID", "ADC", "SUPPORT"}:
+        return raw
+    return "UNKNOWN"
+
+
+def _emoji_from_name(resolver: EmojiResolver | None, prefix: str, stem: str) -> str:
+    if resolver is None or not stem:
+        return ""
+    return resolver.by_emoji_name(f"{prefix}_{_slug(stem)}")
+
+
+def _spell_emoji(resolver: EmojiResolver | None, spell_id: Any) -> str:
+    if resolver is None:
+        return ""
+    spell_num = _safe_int(spell_id)
+    if spell_num is None or spell_num <= 0:
+        return ""
+    stem = SUMMONER_SPELL_STEMS.get(spell_num)
+    if stem:
+        emoji = _emoji_from_name(resolver, "spell", stem)
+        if emoji:
+            return emoji
+    return resolver.spell_id(spell_num)
+
+
+def _rune_style_emoji(resolver: EmojiResolver | None, style_id: Any) -> str:
+    if resolver is None:
+        return ""
+    style_num = _safe_int(style_id)
+    if style_num is None or style_num <= 0:
+        return ""
+    stem = RUNE_STYLE_STEMS.get(style_num)
+    if stem:
+        emoji = _emoji_from_name(resolver, "rune", stem)
+        if emoji:
+            return emoji
+    return resolver.rune_id(style_num)
+
+
+def _keystone_emoji(resolver: EmojiResolver | None, perk_id: Any) -> str:
+    if resolver is None:
+        return ""
+    perk_num = _safe_int(perk_id)
+    if perk_num is None or perk_num <= 0:
+        return ""
+    stem = KEYSTONE_STEMS.get(perk_num)
+    if stem:
+        emoji = _emoji_from_name(resolver, "rune", stem)
+        if emoji:
+            return emoji
+    return resolver.rune_id(perk_num)
+
+
+def _loadout_lines(participant: dict, resolver: EmojiResolver | None) -> tuple[str | None, str | None]:
+    payload = _payload_for(participant)
+    if not payload:
+        return None, None
+
+    spell_ids = [payload.get("summoner1Id"), payload.get("summoner2Id")]
+    spell_icons = [icon for icon in (_spell_emoji(resolver, spell_id) for spell_id in spell_ids) if icon]
+
+    perks = payload.get("perks")
+    styles = perks.get("styles") if isinstance(perks, dict) else []
+    style0 = styles[0] if isinstance(styles, list) and len(styles) > 0 and isinstance(styles[0], dict) else {}
+    style1 = styles[1] if isinstance(styles, list) and len(styles) > 1 and isinstance(styles[1], dict) else {}
+    selections0 = style0.get("selections") if isinstance(style0, dict) else []
+    primary_selection = selections0[0] if isinstance(selections0, list) and selections0 else {}
+    rune_icons = [
+        _keystone_emoji(resolver, primary_selection.get("perk") if isinstance(primary_selection, dict) else None),
+        _rune_style_emoji(resolver, style0.get("style") if isinstance(style0, dict) else None),
+        _rune_style_emoji(resolver, style1.get("style") if isinstance(style1, dict) else None),
+    ]
+    rune_icons = [icon for icon in rune_icons if icon]
+
+    item_icons: list[str] = []
+    if resolver is not None:
+        item_icons = [resolver.item(payload.get(f"item{i}")) for i in range(7)]
+        item_icons = [icon for icon in item_icons if icon]
+
+    spells_runes = None
+    items = None
+    if spell_icons or rune_icons:
+        parts: list[str] = []
+        if spell_icons:
+            parts.append("Spells: " + " ".join(spell_icons))
+        if rune_icons:
+            parts.append("Runes: " + " ".join(rune_icons))
+        spells_runes = " | ".join(parts)
+    if item_icons:
+        items = "Build: " + " ".join(item_icons)
+    return spells_runes, items
+
+
+def _team_kills(participants: list[dict], team_id: int | None) -> float:
+    if team_id is None:
+        return 0.0
+    total = 0.0
+    for participant in participants:
+        if participant.get("team_id") == team_id:
+            total += _safe_float(participant.get("kills"))
+    return total
+
+
+def _kill_participation(participant: dict, participants: list[dict]) -> str:
+    team_id = participant.get("team_id")
+    team_kills = _team_kills(participants, team_id if isinstance(team_id, int) else None)
+    if team_kills <= 0:
+        return "0.0%"
+    kp = 100.0 * (_safe_float(participant.get("kills")) + _safe_float(participant.get("assists"))) / team_kills
+    return f"{kp:.1f}%"
+
+
+def _cs_lines(participant: dict, duration: Any) -> str:
+    payload = _payload_for(participant)
+    cs = _safe_float(payload.get("totalMinionsKilled")) + _safe_float(payload.get("neutralMinionsKilled"))
+    seconds = max(_safe_float(duration), 1.0)
+    cs_per_min = cs / (seconds / 60.0)
+    return f"{int(cs)} ({cs_per_min:.1f}/min)"
+
+
+def _game_type_label(mode: str | None, queue_id: int | None, ranked_queue_type: str | None = None) -> str:
+    if ranked_queue_type == "RANKED_SOLO_5x5":
+        return "SoloQ"
+    if ranked_queue_type == "RANKED_FLEX_SR":
+        return "Flex"
+    if queue_id in QUEUE_LABELS:
+        return QUEUE_LABELS[queue_id]
+    if mode:
+        return mode.title()
+    if queue_id is not None:
+        return f"Queue {queue_id}"
+    return "Unknown"
+
+
+def _is_unscored_mode(mode: str | None, queue_id: int | None = None, ranked_queue_type: str | None = None) -> bool:
+    if ranked_queue_type in {"RANKED_SOLO_5x5", "RANKED_FLEX_SR"}:
+        return False
+    if queue_id in {420, 440}:
+        return False
+    raw = str(mode or "").strip().lower()
+    return any(token in raw for token in UNSCORED_MODE_TOKENS)
+
+
+def _lp_line(score_payload: dict, participant: dict, resolver: EmojiResolver | None = None) -> str | None:
+    _ = participant
+    rank_delta = score_payload.get("rank_delta_lp")
+    new_rank = score_payload.get("rank_after")
+    rank_before = score_payload.get("rank_before")
+    if rank_delta is None and new_rank is None and rank_before is None:
+        return None
+
+    delta = _safe_int(rank_delta)
+    if delta is None:
+        delta_label = None
+        prefix = ""
+    elif delta > 0:
+        delta_label = f"+{delta} LP"
+        prefix = "\U0001F7E2"
+    elif delta < 0:
+        delta_label = f"{delta} LP"
+        prefix = "\U0001F534"
+    else:
+        delta_label = "0 LP"
+        prefix = "\u26AA"
+
+    rank_label = str(new_rank or rank_before or "").strip()
+    tier = ""
+    division = ""
+    lp = ""
+    if rank_label:
+        left, sep, right = rank_label.partition(" - ")
+        bits = left.strip().split()
+        if bits:
+            tier = bits[0].strip().upper()
+        if len(bits) > 1:
+            division = bits[1].strip().upper()
+        if sep:
+            lp = right.strip()
+
+    rank_icon = resolver.rank(tier) if resolver is not None and tier else ""
+
+    delta_part = f"{prefix} {delta_label}".strip() if delta_label else ""
+    rank_parts = [part for part in [rank_icon, division, lp] if part]
+    rank_part = " ".join(rank_parts)
+
+    parts = [part for part in [delta_part, rank_part] if part]
+    return " | ".join(parts) if parts else None
+
+
+def _rank_icon(rank: Any) -> str:
+    value = _safe_int(rank)
+    if value is None:
+        return "?"
+    return RANK_ICON.get(value, str(value))
+
+
+def _categories_summary(score_payload: dict, resolver: EmojiResolver | None = None) -> str:
+    cats = score_payload.get("categories")
+    if not isinstance(cats, dict):
+        return "Aucun score detaille"
+
+    lines: list[str] = []
+    for key, label in CATEGORY_META:
+        cat = cats.get(key)
+        if not isinstance(cat, dict):
+            continue
+        rank = cat.get("rank")
+        if rank is None:
+            continue
+        icon = resolver.scoring_category(key) if resolver is not None else ""
+        lines.append(f"{icon} {label}: {_rank_icon(rank)}/10")
+    return "\n".join(lines) if lines else "Aucun score detaille"
+
+
+def _emoji_asset_url(emoji_markup: str) -> str | None:
+    match = re.search(r"<a?:[^:]+:(\d+)>", emoji_markup or "")
+    if not match:
+        return None
+    return EMOJI_CDN_TEMPLATE.format(emoji_id=match.group(1))
+
+
+def _avatar_url(tracked: dict) -> str | None:
+    url = tracked.get("discord_avatar_url")
+    if isinstance(url, str) and url.strip():
+        return url
+    return None
+
+
+def _focus_participant(participants: list[dict], tracked_by_puuid: dict[str, dict]) -> tuple[dict, dict] | None:
+    tracked_parts = [participant for participant in participants if str(participant.get("puuid") or "") in tracked_by_puuid]
+    if not tracked_parts:
+        return None
+    participant = tracked_parts[0]
+    tracked = tracked_by_puuid.get(str(participant.get("puuid") or ""), {})
+    return participant, tracked
+
+
+def _score_badge(
+    participant: dict,
+    score_by_puuid: dict[str, dict],
+    participants: list[dict],
+    resolver: EmojiResolver | None = None,
+) -> str:
+    puuid = str(participant.get("puuid") or "")
+    score_payload = score_by_puuid.get(puuid) or {}
+    if not puuid or not score_payload:
+        return ""
+
+    player_score = _safe_float(score_payload.get("final_score"))
+    all_scores: dict[str, float] = {
+        str(score.get("puuid") or ""): _safe_float(score.get("final_score"))
+        for score in score_by_puuid.values()
+        if str(score.get("puuid") or "")
+    }
+    if not all_scores:
+        return ""
+
+    win = participant.get("win")
+    if win is True and player_score >= max(all_scores.values()):
+        icon = resolver.by_emoji_name("mvp") if resolver is not None else ""
+        return icon.strip()
+
+    if win is False:
+        team_id = _safe_int(participant.get("team_id"))
+        team_puuids = {
+            str(p.get("puuid") or "")
+            for p in participants
+            if _safe_int(p.get("team_id")) == team_id and str(p.get("puuid") or "")
+        }
+        team_scores = [score for p_id, score in all_scores.items() if p_id in team_puuids]
+        if team_scores and player_score >= max(team_scores):
+            icon = resolver.by_emoji_name("ace") if resolver is not None else ""
+            return icon.strip()
+
+    return ""
+
+
+def build_match_finished_embed(
+    summary: dict,
+    tracked_by_puuid: dict[str, dict],
+    resolver: EmojiResolver | None = None,
+) -> tuple[discord.Embed, discord.File | None, discord.ui.View | None]:
+    participants: list[dict] = summary.get("participants") or []
+    scores: list[dict] = summary.get("scores") or []
+    score_by_puuid = {str(score.get("puuid") or ""): score for score in scores if score.get("puuid")}
+    focus = _focus_participant(participants, tracked_by_puuid)
+
+    embed = discord.Embed(color=discord.Color.blurple())
+    if focus is None:
+        embed.title = f"Match finished - {summary.get('riot_match_id')}"
+        embed.description = "Aucun joueur tracke dans ce match."
+        return embed, None, None
+
+    participant, tracked = focus
+    puuid = str(participant.get("puuid") or "")
+    player_name = _name_for(participant, tracked_by_puuid)
+    score_payload = score_by_puuid.get(puuid) or {}
+    queue_id = _safe_int(summary.get("queue_id"))
+    ranked_queue_type = summary.get("ranked_queue_type")
+    mode = _game_type_label(summary.get("game_mode"), queue_id, ranked_queue_type)
+    duration = summary.get("game_duration")
+    role = _role_for(participant, score_payload if isinstance(score_payload, dict) else {})
+    champ = str(participant.get("champion_name") or "?")
+    role_icon = resolver.role(role) if resolver is not None else ""
+    champ_icon = resolver.champ_from_filename(champ) if resolver is not None else ""
+    champion_icon_url = _emoji_asset_url(champ_icon)
+    avatar_url = _avatar_url(tracked)
+    if champion_icon_url:
+        embed.set_author(name=player_name, icon_url=champion_icon_url)
+    elif avatar_url:
+        embed.set_author(name=player_name, icon_url=avatar_url)
+    else:
+        embed.set_author(name=player_name)
+
+    win = participant.get("win")
+    if win is True:
+        embed.color = discord.Color.green()
+    elif win is False:
+        embed.color = discord.Color.red()
+    else:
+        embed.color = discord.Color.blurple()
+    spells_runes, items_line = _loadout_lines(participant, resolver)
+
+    lp_line = None
+    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type):
+        lp_line = _lp_line(score_payload if isinstance(score_payload, dict) else {}, participant, resolver)
+    if lp_line:
+        title_line = lp_line
+    else:
+        title_line = ""
+    badge_line = ""
+    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type):
+        badge_line = _score_badge(participant, score_by_puuid, participants, resolver)
+
+    info_lines = []
+    if title_line:
+        info_lines.append(" ".join(part for part in [badge_line, title_line] if part))
+    else:
+        info_lines.append(" ".join(part for part in [badge_line, "\U0001F3AE", role_icon, mode] if part))
+    if title_line:
+        info_lines.append(" ".join(part for part in ["\U0001F3AE", role_icon, mode] if part))
+    info_lines.append(f"\u23F1\uFE0F {_fmt_duration(duration)}")
+
+    file: discord.File | None = None
+    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type) and isinstance(score_payload, dict) and score_payload:
+        final_score = _safe_float(score_payload.get("final_score"))
+        file = make_score_png(final_score)
+        if file is not None:
+            embed.set_thumbnail(url="attachment://score.png")
+
+    stats_value = "\n".join(
+        [
+            f"\u2694\uFE0F KDA: **{_kda(participant)}**",
+            f"\U0001F91D KP: **{_kill_participation(participant, participants)}**",
+            f"\U0001F33E CS: **{_cs_lines(participant, duration)}**",
+        ]
+    )
+
+    embed.add_field(name=BLANK, value="\n".join(info_lines), inline=True)
+    embed.add_field(name=BLANK, value=stats_value, inline=True)
+
+    loadout_value_lines: list[str] = []
+    if spells_runes:
+        loadout_value_lines.append(spells_runes)
+    if items_line:
+        loadout_value_lines.append(items_line)
+    if loadout_value_lines:
+        embed.add_field(name=BLANK, value="\n".join(loadout_value_lines), inline=False)
+
+    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type) and isinstance(score_payload, dict) and score_payload:
+        embed.add_field(name="Notes :", value=_categories_summary(score_payload, resolver), inline=False)
+
+    view: discord.ui.View | None = None
+    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type) and isinstance(score_payload, dict) and score_payload:
+        view = MatchScoreBreakdownView(
+            base_embed=embed,
+            score_payload=score_payload,
+            player_name=player_name,
+            author_icon_url=champion_icon_url or avatar_url,
+            author_name=player_name,
+            embed_color=embed.color,
+            resolver=resolver,
+        )
+
+    match_datetime = _fmt_match_datetime(summary.get("game_end_ts")) or _fmt_match_datetime(
+        summary.get("game_start_ts")
+    )
+    if match_datetime:
+        embed.set_footer(text=f"Game date: {match_datetime}")
+
+    return embed, file, view

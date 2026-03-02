@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 236 61% 8%;
+    --foreground: 210 40% 98%;
+    --card: 239 43% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 238 45% 12%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 192 100% 67%;
+    --primary-foreground: 236 61% 8%;
+    --secondary: 278 83% 63%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 237 30% 19%;
+    --muted-foreground: 220 18% 72%;
+    --accent: 311 100% 76%;
+    --accent-foreground: 236 61% 8%;
+    --destructive: 0 78% 63%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 236 27% 26%;
+    --input: 236 27% 26%;
+    --ring: 192 100% 67%;
+    --chart-1: 192 100% 67%;
+    --chart-2: 278 83% 63%;
+    --chart-3: 311 100% 76%;
+    --chart-4: 224 92% 63%;
+    --chart-5: 172 72% 59%;
+    --radius: 1.25rem;
+  }
+
+  body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+    background-image:
+      radial-gradient(circle at top, rgba(133, 79, 255, 0.28), transparent 32%),
+      radial-gradient(circle at 80% 18%, rgba(79, 226, 255, 0.2), transparent 18%),
+      radial-gradient(circle at bottom left, rgba(249, 122, 255, 0.16), transparent 28%),
+      linear-gradient(180deg, #09081f 0%, #0b1230 44%, #090b1d 100%);
+    background-attachment: fixed;
+    letter-spacing: 0.01em;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    letter-spacing: -0.03em;
+  }
+
+  ::selection {
+    background: rgba(110, 231, 255, 0.35);
+    color: white;
+  }
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.12) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 76% 32%, rgba(109, 231, 255, 0.18) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 62% 72%, rgba(255, 126, 246, 0.16) 0 1px, transparent 1.5px);
+  background-size: 240px 240px, 340px 340px, 280px 280px;
+  opacity: 0.55;
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply border border-white/10 bg-white/5 backdrop-blur-xl;
+    box-shadow:
+      0 20px 60px rgba(4, 8, 28, 0.42),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .aurora-border {
+    position: relative;
+  }
+
+  .aurora-border::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    background: linear-gradient(
+      135deg,
+      rgba(110, 231, 255, 0.7),
+      rgba(151, 71, 255, 0.32) 40%,
+      rgba(255, 107, 214, 0.62)
+    );
+    opacity: 0.55;
+  }
+
+  .star-divider {
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(110, 231, 255, 0.32),
+      rgba(255, 107, 214, 0.32),
+      transparent
+    );
+  }
+}
