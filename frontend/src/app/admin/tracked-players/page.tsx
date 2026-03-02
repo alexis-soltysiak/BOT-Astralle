@@ -49,11 +49,12 @@ function PuuidCell({ puuid }: { puuid: string | null }) {
     return <span>-</span>;
   }
 
-  const short = `${puuid.slice(0, 10)}...`;
+  const resolvedPuuid = puuid;
+  const short = `${resolvedPuuid.slice(0, 10)}...`;
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(puuid);
+      await navigator.clipboard.writeText(resolvedPuuid);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
@@ -67,7 +68,7 @@ function PuuidCell({ puuid }: { puuid: string | null }) {
         type="button"
         onClick={handleCopy}
         className="rounded-md px-2 py-1 text-left font-mono text-xs text-slate-200 transition hover:bg-white/5"
-        title={puuid}
+        title={resolvedPuuid}
       >
         {short}
       </button>
@@ -78,7 +79,7 @@ function PuuidCell({ puuid }: { puuid: string | null }) {
         <div className="flex items-start gap-2">
           <textarea
             readOnly
-            value={puuid}
+            value={resolvedPuuid}
             rows={2}
             className="min-h-[3.5rem] flex-1 resize-none rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-slate-100 outline-none"
             onFocus={(event) => event.currentTarget.select()}
