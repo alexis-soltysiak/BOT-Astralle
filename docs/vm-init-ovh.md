@@ -117,7 +117,7 @@ POSTGRES_DB=app
 POSTGRES_USER=app
 POSTGRES_PASSWORD=change-this-to-a-long-random-password
 
-CORS_ALLOWED_ORIGINS=http://149.202.57.147
+CORS_ALLOWED_ORIGINS=["http://149.202.57.147"]
 NEXT_PUBLIC_BACKEND_BASE_URL=http://149.202.57.147
 
 RIOT_API_KEY=your-riot-key
@@ -135,7 +135,7 @@ DISCORD_FINISHED_CHANNEL_ID=your-channel-id
 With the current IP-only setup:
 
 - `NEXT_PUBLIC_BACKEND_BASE_URL` should stay `http://149.202.57.147`
-- `CORS_ALLOWED_ORIGINS` should stay `http://149.202.57.147`
+- `CORS_ALLOWED_ORIGINS` should stay `["http://149.202.57.147"]`
 
 ## 6. Start the containers in production mode
 
@@ -202,7 +202,7 @@ Then:
 Values to update in `.env.compose`:
 
 ```env
-CORS_ALLOWED_ORIGINS=https://front.your-domain.tld
+CORS_ALLOWED_ORIGINS=["https://front.your-domain.tld"]
 NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
 ```
 

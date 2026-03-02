@@ -43,7 +43,7 @@ POSTGRES_DB=app
 POSTGRES_USER=app
 POSTGRES_PASSWORD=<strong-random-password>
 
-CORS_ALLOWED_ORIGINS=https://front.your-domain.tld
+CORS_ALLOWED_ORIGINS=["https://front.your-domain.tld"]
 NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
 
 RIOT_API_KEY=<riot-api-key>

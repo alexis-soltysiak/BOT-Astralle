@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -24,7 +25,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://app:app@localhost:5432/app"
     db_pool_size: int = 5
     db_max_overflow: int = 10
-    cors_allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_allowed_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     riot_api_key: str = ""
 
