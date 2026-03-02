@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.security import require_admin_frontend_access
 from app.features.jobs.repository import JobsRepository
 from app.features.jobs.schemas import JobOut, JobPatch, JobRunOut
 from app.features.jobs.service import JobsService
@@ -17,6 +18,7 @@ def get_service() -> JobsService:
 
 @router.get("/jobs", response_model=list[JobOut])
 async def list_jobs(
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: JobsService = Depends(get_service),
 ) -> list[JobOut]:
@@ -27,6 +29,7 @@ async def list_jobs(
 async def patch_job(
     job_key: str,
     payload: JobPatch,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: JobsService = Depends(get_service),
 ) -> JobOut:
@@ -40,6 +43,7 @@ async def patch_job(
 async def list_job_runs(
     job_key: str,
     limit: int = 20,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: JobsService = Depends(get_service),
 ) -> list[JobRunOut]:
@@ -52,6 +56,7 @@ async def list_job_runs(
 @router.post("/jobs/{job_key}/run", status_code=status.HTTP_202_ACCEPTED)
 async def run_job_now(
     job_key: str,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: JobsService = Depends(get_service),
 ) -> dict[str, str]:

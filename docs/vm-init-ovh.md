@@ -120,6 +120,11 @@ POSTGRES_PASSWORD=change-this-to-a-long-random-password
 CORS_ALLOWED_ORIGINS=["http://149.202.57.147"]
 NEXT_PUBLIC_BACKEND_BASE_URL=http://149.202.57.147
 BACKEND_PROXY_SECRET=change-this-to-a-long-random-secret
+DISCORD_SERVICE_TOKEN=change-this-to-a-long-random-discord-token
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-this-to-a-strong-admin-password
+ADMIN_SESSION_SECRET=change-this-to-a-long-random-admin-session-secret
+ADMIN_SESSION_TTL_SECONDS=43200
 
 RIOT_API_KEY=your-riot-key
 
@@ -191,6 +196,12 @@ Result:
 - `http://149.202.57.147/api/...` -> backend behind basic auth
 - `http://149.202.57.147/healthz` -> backend health endpoint without auth
 
+Once the app-level admin login is enabled, you can remove Nginx `basic auth` from the public API domain and keep the API protected by:
+
+- the injected backend proxy secret
+- the admin HTTP-only session cookie
+- the separate Discord service token
+
 ## 8. When you later have domains
 
 Example:
@@ -212,6 +223,11 @@ Values to update in `.env.compose`:
 CORS_ALLOWED_ORIGINS=["https://front.your-domain.tld"]
 NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
 BACKEND_PROXY_SECRET=change-this-to-a-long-random-secret
+DISCORD_SERVICE_TOKEN=change-this-to-a-long-random-discord-token
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-this-to-a-strong-admin-password
+ADMIN_SESSION_SECRET=change-this-to-a-long-random-admin-session-secret
+ADMIN_SESSION_TTL_SECONDS=43200
 ```
 
 Then rebuild:

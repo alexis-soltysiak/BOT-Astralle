@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_session
+from app.core.security import require_admin_frontend_access, require_discord_service_token
 from app.features.publications.repository import PublicationsRepository
 from app.features.publications.schemas import AckRequest, ClaimRequest, PublicationEventOut
 
@@ -21,6 +22,7 @@ def get_repo() -> PublicationsRepository:
 async def list_publication_events(
     status_filter: str | None = None,
     limit: int = 50,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     repo: PublicationsRepository = Depends(get_repo),
 ) -> list[PublicationEventOut]:
@@ -30,6 +32,7 @@ async def list_publication_events(
 @router.post("/publication-events/claim", response_model=list[PublicationEventOut])
 async def claim_publication_events(
     payload: ClaimRequest,
+    _: None = Depends(require_discord_service_token),
     session: AsyncSession = Depends(get_session),
     repo: PublicationsRepository = Depends(get_repo),
 ) -> list[PublicationEventOut]:
@@ -41,6 +44,7 @@ async def claim_publication_events(
 async def ack_publication_event(
     event_id: uuid.UUID,
     payload: AckRequest,
+    _: None = Depends(require_discord_service_token),
     session: AsyncSession = Depends(get_session),
     repo: PublicationsRepository = Depends(get_repo),
 ) -> PublicationEventOut:

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.security import require_admin_frontend_access, require_admin_or_discord_service
 from app.features.matches.repository import MatchesRepository
 from app.features.publications.repository import PublicationsRepository
 from app.features.tracked_players.repository import TrackedPlayersRepository
@@ -25,6 +26,7 @@ def get_service() -> TrackedPlayersService:
 
 @router.get("/tracked-players", response_model=list[TrackedPlayerOut])
 async def list_tracked_players(
+    _: str = Depends(require_admin_or_discord_service),
     session: AsyncSession = Depends(get_session),
     service: TrackedPlayersService = Depends(get_service),
 ) -> list[TrackedPlayerOut]:
@@ -39,6 +41,7 @@ async def list_tracked_players(
 )
 async def create_tracked_player(
     payload: TrackedPlayerCreate,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: TrackedPlayersService = Depends(get_service),
 ) -> TrackedPlayerOut:
@@ -52,6 +55,7 @@ async def create_tracked_player(
 @router.get("/tracked-players/{player_id}", response_model=TrackedPlayerOut)
 async def get_tracked_player(
     player_id: uuid.UUID,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: TrackedPlayersService = Depends(get_service),
 ) -> TrackedPlayerOut:
@@ -65,6 +69,7 @@ async def get_tracked_player(
 async def patch_tracked_player(
     player_id: uuid.UUID,
     payload: TrackedPlayerPatch,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: TrackedPlayersService = Depends(get_service),
 ) -> TrackedPlayerOut:
@@ -77,6 +82,7 @@ async def patch_tracked_player(
 @router.delete("/tracked-players/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_tracked_player(
     player_id: uuid.UUID,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: TrackedPlayersService = Depends(get_service),
 ) -> None:

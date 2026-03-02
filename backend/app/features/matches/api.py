@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.security import require_admin_frontend_access, require_admin_or_discord_service
 from app.features.leaderboards.repository import LeaderboardsRepository
 from app.features.matches.repository import MatchesRepository
 from app.features.matches.service import MatchesService
@@ -26,6 +27,7 @@ def get_service() -> MatchesService:
 @router.get("/matches", response_model=list[MatchOut])
 async def list_matches(
     limit: int = 50,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: MatchesService = Depends(get_service),
 ) -> list[MatchOut]:
@@ -35,6 +37,7 @@ async def list_matches(
 @router.get("/matches/{riot_match_id}", response_model=MatchOut)
 async def get_match(
     riot_match_id: str,
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: MatchesService = Depends(get_service),
 ) -> MatchOut:
@@ -46,6 +49,7 @@ async def get_match(
 
 @router.post("/matches/ingest", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_matches(
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: MatchesService = Depends(get_service),
 ) -> dict:
@@ -57,6 +61,7 @@ async def ingest_matches(
 @router.get("/matches/{riot_match_id}/summary", response_model=MatchSummaryOut)
 async def get_match_summary(
     riot_match_id: str,
+    _: str = Depends(require_admin_or_discord_service),
     session: AsyncSession = Depends(get_session),
     service: MatchesService = Depends(get_service),
 ) -> MatchSummaryOut:

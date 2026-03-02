@@ -3,6 +3,7 @@
 import "./globals.css";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/shared/ui/sidebar";
 
 const queryClient = new QueryClient();
@@ -12,6 +13,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const showSidebar = pathname.startsWith("/admin");
+
   return (
     <html lang="fr">
       <body className="min-h-screen bg-background text-foreground antialiased">
@@ -24,7 +28,7 @@ export default function RootLayout({
             </div>
 
             <div className="relative flex min-h-screen flex-col md:flex-row">
-              <Sidebar />
+              {showSidebar ? <Sidebar /> : null}
               <main className="flex-1 p-4 md:p-8">
                 <div className="mx-auto max-w-7xl">{children}</div>
               </main>

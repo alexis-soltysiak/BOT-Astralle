@@ -46,6 +46,11 @@ POSTGRES_PASSWORD=<strong-random-password>
 CORS_ALLOWED_ORIGINS=["https://front.your-domain.tld"]
 NEXT_PUBLIC_BACKEND_BASE_URL=https://api.your-domain.tld
 BACKEND_PROXY_SECRET=<long-random-shared-secret>
+DISCORD_SERVICE_TOKEN=<long-random-discord-service-token>
+ADMIN_USERNAME=<admin-username>
+ADMIN_PASSWORD=<strong-admin-password>
+ADMIN_SESSION_SECRET=<long-random-admin-session-secret>
+ADMIN_SESSION_TTL_SECONDS=43200
 
 RIOT_API_KEY=<riot-api-key>
 
@@ -68,21 +73,17 @@ Rules:
 
 ## 5. Backend hardening
 
-Current repo risk:
+Current repo status:
 
-- The admin API currently exposes mutation endpoints without authentication.
+- Frontend admin routes can rely on an HTTP-only admin session.
+- Backend API routes can be restricted to an authenticated admin session.
+- Discord service-to-service calls can use a separate machine token.
 
-Before public exposure, add one of these:
-
-- A reverse proxy basic auth in front of the admin UI and API.
-- An app-level admin token for write endpoints.
-- A proper identity provider later if the project grows.
-
-This repo now supports a backend proxy secret:
+This repo now supports two separate auth layers:
 
 - Nginx injects `X-Backend-Proxy-Secret` to `/api/`
-- the backend rejects API requests without the expected secret
-- the Discord bot sends the same secret for internal service-to-service calls
+- frontend admin calls also require a signed HTTP-only admin session cookie
+- the Discord bot sends `X-Discord-Service-Token` for service-to-service calls
 
 Minimum backend controls:
 
@@ -97,7 +98,10 @@ Recommended first-step protection for this project:
 
 - Keep the backend private behind Nginx.
 - Allow only Nginx to reach the backend container.
-- Protect `/api` admin routes with at least a shared secret or basic auth.
+- Protect `/auth/` and `/api/` through HTTPS only.
+- Require a real admin login for frontend-admin routes.
+- Keep Discord on a separate service token.
+- Remove Nginx `basic auth` from `api.your-domain.tld` once app auth is in place.
 
 ## 6. Frontend hardening
 
@@ -153,6 +157,7 @@ Nginx security baseline:
 - Redirect HTTP to HTTPS.
 - Set `X-Forwarded-*` headers.
 - Limit request body size if needed.
+- Proxy both `/auth/` and `/api/` to the backend.
 - Optionally enable rate limiting on API routes.
 - Optionally put basic auth in front of admin endpoints immediately.
 

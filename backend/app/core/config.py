@@ -30,6 +30,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
     backend_proxy_secret: str = ""
+    discord_service_token: str = ""
+    admin_username: str = ""
+    admin_password: str = ""
+    admin_session_secret: str = ""
+    admin_session_ttl_seconds: int = 60 * 60 * 12
+    admin_session_cookie_name: str = "astralle_admin_session"
 
     riot_api_key: str = ""
 

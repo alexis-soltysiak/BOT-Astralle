@@ -1,14 +1,18 @@
 "use client";
 
+import React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/shared/ui/brand-mark";
+import { logoutAdmin } from "@/features/auth/api";
 import {
   Activity,
   BarChart3,
   Cog,
   Database,
+  LogOut,
   ListChecks,
   Swords,
   Users,
@@ -26,6 +30,20 @@ const items = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+  async function handleLogout() {
+    try {
+      setIsLoggingOut(true);
+      await logoutAdmin();
+      queryClient.removeQueries({ queryKey: ["auth-session"] });
+    } finally {
+      setIsLoggingOut(false);
+      router.replace("/login");
+    }
+  }
 
   return (
     <aside className="w-full md:sticky md:top-0 md:h-screen md:w-[290px] md:flex-none">
@@ -86,6 +104,15 @@ export function Sidebar() {
               <p className="mt-2 text-sm leading-6 text-slate-300">
                 Palette inspiree du logo: bleu cosmique, cyan lumineux et magenta neon pour un rendu plus premium.
               </p>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <LogOut className="h-4 w-4" />
+                {isLoggingOut ? "Deconnexion..." : "Se deconnecter"}
+              </button>
             </div>
           </div>
         </div>

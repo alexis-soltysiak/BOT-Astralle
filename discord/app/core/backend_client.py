@@ -6,11 +6,18 @@ DISCORD_BINDINGS_PREFIX = "/api/discord-bindings"
 
 
 class BackendClient:
-    def __init__(self, base_url: str, proxy_secret: str = "") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        proxy_secret: str = "",
+        discord_service_token: str = "",
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         headers = {}
         if proxy_secret:
             headers["X-Backend-Proxy-Secret"] = proxy_secret
+        if discord_service_token:
+            headers["X-Discord-Service-Token"] = discord_service_token
         self._client = httpx.AsyncClient(timeout=25.0, headers=headers)
 
     async def aclose(self) -> None:

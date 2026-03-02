@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.security import require_admin_frontend_access, require_admin_or_discord_service
 from app.features.leaderboards.repository import LeaderboardsRepository
 from app.features.leaderboards.schemas import LeaderboardEntryOut
 from app.features.leaderboards.service import LeaderboardsService
@@ -19,6 +20,7 @@ def get_service() -> LeaderboardsService:
 @router.get("/leaderboards", response_model=list[LeaderboardEntryOut])
 async def get_leaderboards(
     sort: str = "solo",
+    _: str = Depends(require_admin_or_discord_service),
     session: AsyncSession = Depends(get_session),
     service: LeaderboardsService = Depends(get_service),
 ) -> list[LeaderboardEntryOut]:
@@ -29,6 +31,7 @@ async def get_leaderboards(
 
 @router.post("/leaderboards/refresh", status_code=status.HTTP_202_ACCEPTED)
 async def refresh_leaderboards(
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: LeaderboardsService = Depends(get_service),
 ) -> dict[str, int]:

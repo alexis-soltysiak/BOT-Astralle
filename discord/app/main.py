@@ -234,6 +234,7 @@ async def run() -> None:
     backend = BackendClient(
         settings.backend_base_url,
         proxy_secret=settings.backend_proxy_secret,
+        discord_service_token=settings.discord_service_token,
     )
     app = App(backend)
     try:

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.security import require_admin_frontend_access, require_admin_or_discord_service
 from app.features.leaderboards.repository import LeaderboardsRepository
 from app.features.live_games.repository import LiveGamesRepository
 from app.features.live_games.schemas import LiveGameOut
@@ -24,6 +25,7 @@ def get_service() -> LiveGamesService:
 @router.get("/live-games", response_model=list[LiveGameOut])
 async def list_live_games(
     active_only: bool = False,
+    _: str = Depends(require_admin_or_discord_service),
     session: AsyncSession = Depends(get_session),
     service: LiveGamesService = Depends(get_service),
 ) -> list[LiveGameOut]:
@@ -32,6 +34,7 @@ async def list_live_games(
 
 @router.get("/live-games/active", response_model=list[LiveGameOut])
 async def list_active_live_games(
+    _: str = Depends(require_admin_or_discord_service),
     session: AsyncSession = Depends(get_session),
     service: LiveGamesService = Depends(get_service),
 ) -> list[LiveGameOut]:
@@ -40,6 +43,7 @@ async def list_active_live_games(
 
 @router.post("/live-games/refresh", status_code=status.HTTP_202_ACCEPTED)
 async def refresh_live_games(
+    _: str = Depends(require_admin_frontend_access),
     session: AsyncSession = Depends(get_session),
     service: LiveGamesService = Depends(get_service),
 ) -> dict[str, int]:
