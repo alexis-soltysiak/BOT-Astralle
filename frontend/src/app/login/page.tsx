@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Suspense } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { getAuthSession, loginAdmin } from "@/features/auth/api";
 import { ApiUnauthorizedError } from "@/features/api/client";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const params = useSearchParams();
@@ -84,5 +85,21 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[80vh] items-center justify-center">
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-6 py-4 text-sm text-slate-300">
+            Chargement...
+          </div>
+        </div>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }
