@@ -242,7 +242,18 @@ class LiveGamesService:
                     continue
 
                 try:
-                    game = await client.get_active_game(p.platform, p.puuid)  # type: ignore[arg-type]
+                    summoner = await client.get_summoner_by_puuid(
+                        p.platform,  # type: ignore[arg-type]
+                        p.puuid,
+                    )
+                    summoner_id = str(summoner.get("id") or "").strip()
+                    if not summoner_id:
+                        raise ValueError("missing_summoner_id")
+
+                    game = await client.get_active_game(
+                        p.platform,  # type: ignore[arg-type]
+                        summoner_id,
+                    )
                     game_id = str(game.get("gameId") or "")
                     payload = game
                     if game_id:

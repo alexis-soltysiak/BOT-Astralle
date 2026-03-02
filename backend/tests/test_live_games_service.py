@@ -44,7 +44,7 @@ def _http_404() -> httpx.HTTPStatusError:
 
 
 @pytest.mark.asyncio
-async def test_refresh_marks_player_live_from_puuid(monkeypatch) -> None:
+async def test_refresh_marks_player_live_from_summoner_id_resolved_from_puuid(monkeypatch) -> None:
     player = SimpleNamespace(
         id=uuid.uuid4(),
         active=True,
@@ -59,10 +59,15 @@ async def test_refresh_marks_player_live_from_puuid(monkeypatch) -> None:
 
         def __init__(self, api_key: str) -> None:
             self.api_key = api_key
+            self.summoner_calls: list[tuple[str, str]] = []
             self.calls: list[tuple[str, str]] = []
             self.rank_calls: list[tuple[str, str]] = []
             self.closed = False
             self.__class__.instances.append(self)
+
+        async def get_summoner_by_puuid(self, platform: str, puuid: str) -> dict:
+            self.summoner_calls.append((platform, puuid))
+            return {"id": "encrypted-summoner-id"}
 
         async def get_active_game(self, platform: str, player_id: str) -> dict:
             self.calls.append((platform, player_id))
@@ -147,7 +152,8 @@ async def test_refresh_marks_player_live_from_puuid(monkeypatch) -> None:
             },
         }
     ]
-    assert FakeRiotClient.instances[0].calls == [("euw1", "tracked-puuid")]
+    assert FakeRiotClient.instances[0].summoner_calls == [("euw1", "tracked-puuid")]
+    assert FakeRiotClient.instances[0].calls == [("euw1", "encrypted-summoner-id")]
     assert FakeRiotClient.instances[0].rank_calls == [("euw1", "tracked-puuid")]
     assert FakeRiotClient.instances[0].closed is True
 
@@ -166,6 +172,9 @@ async def test_refresh_marks_player_none_on_404(monkeypatch) -> None:
     class FakeRiotClient:
         def __init__(self, api_key: str) -> None:
             self.api_key = api_key
+
+        async def get_summoner_by_puuid(self, platform: str, puuid: str) -> dict:
+            return {"id": "encrypted-summoner-id"}
 
         async def get_active_game(self, platform: str, player_id: str) -> dict:
             raise _http_404()
