@@ -439,7 +439,7 @@ def _compact_rank_summary_line(participant: dict, score_by_puuid: dict[str, dict
     if final_rank is None:
         return None
 
-    parts: list[str] = [f"\U0001F3C6{final_rank}/10"]
+    parts: list[str] = [f"\U0001F3C6{_rank_icon(final_rank)}/10"]
     cats = score_payload.get("categories")
     if isinstance(cats, dict):
         for key, icon in COMPACT_CATEGORY_META:

@@ -27,7 +27,7 @@ from app.features.matches.schemas import (
 )
 from app.features.scoring.engine import compute_match_scoring
 from app.features.scoring.models import MatchScore
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 QUEUE_SOLO = "RANKED_SOLO_5x5"
 QUEUE_FLEX = "RANKED_FLEX_SR"
@@ -696,6 +696,48 @@ class MatchesService:
             return None
 
         settings = get_settings()
+        match_payload = match_row.payload if isinstance(match_row.payload, dict) else {}
+        players = await self._players_repo.get_all(session)
+        tracked_by_puuid = {
+            str(player.puuid): player
+            for player in players
+            if player.active and player.puuid
+        }
+
+        rank_client: RiotClient | None = None
+        try:
+            scores = await compute_match_scoring(match_payload)
+            scores, rank_client = await self._enrich_ranked_scores_for_match(
+                session=session,
+                settings=settings,
+                riot_client=rank_client,
+                match_payload=match_payload,
+                riot_match_id=match_row.riot_match_id,
+                ranked_queue_type=_ranked_queue_type_for_queue_id(match_row.queue_id),
+                scores=scores,
+                tracked_by_puuid=tracked_by_puuid,
+                match_end_ts_ms=match_row.game_end_ts or match_row.game_start_ts,
+            )
+        finally:
+            if rank_client is not None:
+                await rank_client.aclose()
+
+        await session.execute(delete(MatchScore).where(MatchScore.match_id == match_row.id))
+        score_rows = [
+            MatchScore(
+                match_id=match_row.id,
+                puuid=str(s.get("puuid") or ""),
+                role=str(s.get("role") or "UNKNOWN"),
+                final_score=float(s.get("final_score") or 0.0),
+                final_grade=str(s.get("final_grade") or "F"),
+                payload=s,
+            )
+            for s in scores
+            if str(s.get("puuid") or "")
+        ]
+        if score_rows:
+            session.add_all(score_rows)
+
         dedupe_key = f"match_finished:manual:{match_row.riot_match_id}:{uuid.uuid4().hex}"
         payload = {
             "riot_match_id": match_row.riot_match_id,
