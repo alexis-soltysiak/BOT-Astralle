@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.security import require_admin_frontend_access, require_admin_or_discord_service
 from app.features.leaderboards.repository import LeaderboardsRepository
+from app.features.live_games.repository import LiveGamesRepository
 from app.features.matches.repository import MatchesRepository
 from app.features.matches.service import MatchesService
 from app.features.publications.repository import PublicationsRepository
@@ -21,6 +22,7 @@ def get_service() -> MatchesService:
         TrackedPlayersRepository(),
         PublicationsRepository(),
         LeaderboardsRepository(),
+        LiveGamesRepository(),
     )
 
 

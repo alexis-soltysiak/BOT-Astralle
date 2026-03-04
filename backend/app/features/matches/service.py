@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 import structlog
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.features.leaderboards.models import RankedSnapshot
 from app.features.leaderboards.repository import LeaderboardsRepository
+from app.features.live_games.repository import LiveGamesRepository
 from app.features.matches.models import Match, MatchParticipant
 from app.features.matches.repository import MatchesRepository
 from app.features.publications.repository import PublicationsRepository
@@ -66,32 +68,49 @@ def _ranked_queue_type_for_queue_id(queue_id: int | None) -> str | None:
     return RANKED_QUEUE_BY_ID.get(queue_id)
 
 
-def _snapshot_rank_label(snapshot: RankedSnapshot | None) -> str | None:
-    if snapshot is None or not snapshot.tier:
+def _match_game_id(match_payload: dict, riot_match_id: str | None = None) -> str | None:
+    info = match_payload.get("info")
+    if isinstance(info, dict):
+        raw_game_id = info.get("gameId")
+        if raw_game_id is not None:
+            return str(raw_game_id).strip() or None
+
+    raw_match_id = str((match_payload.get("metadata") or {}).get("matchId") or riot_match_id or "").strip()
+    if "_" not in raw_match_id:
         return None
-    lp = snapshot.league_points if snapshot.league_points is not None else 0
-    if snapshot.division:
-        return f"{snapshot.tier.title()} {snapshot.division} - {lp} LP"
-    return f"{snapshot.tier.title()} - {lp} LP"
+    _, _, suffix = raw_match_id.rpartition("_")
+    return suffix or None
 
 
-def _snapshot_total_lp(snapshot: RankedSnapshot | None) -> int | None:
-    if snapshot is None or not snapshot.tier or snapshot.league_points is None:
+def _snapshot_rank_label(snapshot: Any | None) -> str | None:
+    if snapshot is None or not getattr(snapshot, "tier", None):
+        return None
+    tier = str(getattr(snapshot, "tier", "") or "")
+    division = getattr(snapshot, "division", None)
+    lp = getattr(snapshot, "league_points", None)
+    lp_value = lp if lp is not None else 0
+    if division:
+        return f"{tier.title()} {division} - {lp_value} LP"
+    return f"{tier.title()} - {lp_value} LP"
+
+
+def _snapshot_total_lp(snapshot: Any | None) -> int | None:
+    if snapshot is None or not getattr(snapshot, "tier", None) or getattr(snapshot, "league_points", None) is None:
         return None
 
-    tier = str(snapshot.tier).upper().strip()
+    tier = str(getattr(snapshot, "tier")).upper().strip()
     if tier not in TIER_ORDER:
         return None
     tier_index = TIER_ORDER.index(tier)
 
     if tier in {"MASTER", "GRANDMASTER", "CHALLENGER"}:
-        return tier_index * 400 + int(snapshot.league_points)
+        return tier_index * 400 + int(getattr(snapshot, "league_points"))
 
-    division = str(snapshot.division or "").upper().strip()
+    division = str(getattr(snapshot, "division", None) or "").upper().strip()
     if division not in DIVISION_ORDER:
         return None
     division_index = DIVISION_ORDER[division]
-    return tier_index * 400 + division_index * 100 + int(snapshot.league_points)
+    return tier_index * 400 + division_index * 100 + int(getattr(snapshot, "league_points"))
 
 
 def _snapshot_from_league_entry(
@@ -125,13 +144,16 @@ async def _ranked_context_for_player(
     tracked_player_id,
     queue_type: str,
     match_end_ts_ms: int | None,
+    before_snapshot: Any | None = None,
     current_snapshot: RankedSnapshot | None = None,
 ) -> dict[str, object]:
     if match_end_ts_ms is None or match_end_ts_ms <= 0:
         return {"queue_type": queue_type}
 
     match_end = datetime.fromtimestamp(match_end_ts_ms / 1000, tz=timezone.utc)
-    before = await leaderboards_repo.get_latest_snapshot_before(session, tracked_player_id, queue_type, match_end)
+    before = before_snapshot
+    if before is None:
+        before = await leaderboards_repo.get_latest_snapshot_before(session, tracked_player_id, queue_type, match_end)
     after = await leaderboards_repo.get_earliest_snapshot_after(session, tracked_player_id, queue_type, match_end)
     if after is None and current_snapshot is not None and current_snapshot.fetched_at >= match_end:
         after = current_snapshot
@@ -154,6 +176,10 @@ async def _ranked_context_for_player(
     }
 
 
+def _payload_has_ranked_context(payload: dict) -> bool:
+    return any(key in payload for key in ("rank_before", "rank_after", "rank_delta_lp"))
+
+
 class MatchesService:
     def __init__(
         self,
@@ -161,11 +187,13 @@ class MatchesService:
         players_repo: TrackedPlayersRepository,
         publications_repo: PublicationsRepository,
         leaderboards_repo: LeaderboardsRepository,
+        live_games_repo: LiveGamesRepository,
     ) -> None:
         self._repo = repo
         self._players_repo = players_repo
         self._publications_repo = publications_repo
         self._leaderboards_repo = leaderboards_repo
+        self._live_games_repo = live_games_repo
         self._log = structlog.get_logger("matches")
 
     async def list(self, session: AsyncSession, limit: int) -> list[Match]:
@@ -174,6 +202,104 @@ class MatchesService:
     async def get(self, session: AsyncSession, riot_match_id: str) -> Match | None:
         return await self._repo.get_by_riot_id(session, riot_match_id)
 
+    async def _current_rank_snapshot(
+        self,
+        *,
+        settings,
+        riot_client: RiotClient | None,
+        tracked_player,
+        queue_type: str,
+    ) -> tuple[RankedSnapshot | None, RiotClient | None]:
+        current_snapshot = None
+        if not (settings.riot_api_key.strip() and tracked_player.platform and tracked_player.puuid):
+            return current_snapshot, riot_client
+
+        if riot_client is None:
+            riot_client = RiotClient(settings.riot_api_key)
+        entries = await riot_client.get_league_entries_by_puuid(tracked_player.platform, tracked_player.puuid)
+        for entry in entries:
+            current_snapshot = _snapshot_from_league_entry(
+                tracked_player_id=tracked_player.id,
+                platform=tracked_player.platform,
+                queue_type=queue_type,
+                entry=entry,
+            )
+            if current_snapshot is not None:
+                break
+        return current_snapshot, riot_client
+
+    async def _enrich_ranked_scores_for_match(
+        self,
+        *,
+        session: AsyncSession,
+        settings,
+        riot_client: RiotClient | None,
+        match_payload: dict,
+        riot_match_id: str,
+        ranked_queue_type: str | None,
+        scores: list[dict],
+        tracked_by_puuid: dict[str, object],
+        match_end_ts_ms: int | None,
+    ) -> tuple[list[dict], RiotClient | None]:
+        if ranked_queue_type is None:
+            return scores, riot_client
+
+        game_id = _match_game_id(match_payload, riot_match_id)
+        enriched_scores: list[dict] = []
+        for score in scores:
+            payload = dict(score or {})
+            puuid = str(payload.get("puuid") or "")
+            tracked = tracked_by_puuid.get(puuid)
+            if tracked is None:
+                enriched_scores.append(payload)
+                continue
+
+            before_snapshot = None
+            if game_id:
+                before_snapshot = await self._live_games_repo.get_ranked_snapshot(
+                    session,
+                    tracked_player_id=tracked.id,
+                    game_id=game_id,
+                    queue_type=ranked_queue_type,
+                )
+
+            current_snapshot = None
+            try:
+                current_snapshot, riot_client = await self._current_rank_snapshot(
+                    settings=settings,
+                    riot_client=riot_client,
+                    tracked_player=tracked,
+                    queue_type=ranked_queue_type,
+                )
+            except httpx.HTTPStatusError as e:
+                self._log.warning(
+                    "ranked_context_live_fetch_http_error",
+                    status=e.response.status_code,
+                    tracked_player_id=str(tracked.id),
+                    queue_type=ranked_queue_type,
+                )
+            except Exception:
+                self._log.exception(
+                    "ranked_context_live_fetch_failed",
+                    tracked_player_id=str(tracked.id),
+                    queue_type=ranked_queue_type,
+                )
+
+            payload.update(
+                await _ranked_context_for_player(
+                    session,
+                    self._leaderboards_repo,
+                    tracked.id,
+                    ranked_queue_type,
+                    match_end_ts_ms,
+                    before_snapshot=before_snapshot,
+                    current_snapshot=current_snapshot,
+                )
+            )
+            enriched_scores.append(payload)
+
+        return enriched_scores, riot_client
+
     async def ingest(self, session: AsyncSession) -> dict:
         settings = get_settings()
         if not settings.riot_api_key.strip():
@@ -181,8 +307,14 @@ class MatchesService:
 
         players = await self._players_repo.get_all(session)
         targets = [p for p in players if p.active and p.puuid and p.region]
+        tracked_by_puuid = {
+            str(player.puuid): player
+            for player in players
+            if player.active and player.puuid
+        }
 
         client = RiotClient(settings.riot_api_key)
+        rank_client: RiotClient | None = None
 
         created_matches = 0
         created_events = 0
@@ -248,6 +380,17 @@ class MatchesService:
                             session.add_all(rows)
 
                             scores = await compute_match_scoring(match_payload)
+                            scores, rank_client = await self._enrich_ranked_scores_for_match(
+                                session=session,
+                                settings=settings,
+                                riot_client=rank_client,
+                                match_payload=match_payload,
+                                riot_match_id=str(meta.get("matchId") or riot_match_id),
+                                ranked_queue_type=_ranked_queue_type_for_queue_id(info.get("queueId")),
+                                scores=scores,
+                                tracked_by_puuid=tracked_by_puuid,
+                                match_end_ts_ms=info.get("gameEndTimestamp") or info.get("gameStartTimestamp"),
+                            )
                             score_rows = [
                                 MatchScore(
                                     match_id=m.id,
@@ -312,6 +455,8 @@ class MatchesService:
             }
         finally:
             await client.aclose()
+            if rank_client is not None:
+                await rank_client.aclose()
 
     async def get_summary(self, session: AsyncSession, riot_match_id: str) -> MatchSummaryOut | None:
         m = await self._repo.get_by_riot_id(session, riot_match_id)
@@ -339,35 +484,38 @@ class MatchesService:
                 payload["final_grade"] = payload.get("final_grade") or score.final_grade
 
                 tracked = tracked_by_puuid.get(str(score.puuid))
-                if ranked_queue_type and tracked is not None:
+                if ranked_queue_type and tracked is not None and not _payload_has_ranked_context(payload):
+                    before_snapshot = None
+                    game_id = _match_game_id(m.payload or {}, m.riot_match_id)
+                    if game_id:
+                        before_snapshot = await self._live_games_repo.get_ranked_snapshot(
+                            session,
+                            tracked_player_id=tracked.id,
+                            game_id=game_id,
+                            queue_type=ranked_queue_type,
+                        )
+
                     current_snapshot = None
-                    if settings.riot_api_key.strip() and tracked.platform and tracked.puuid:
-                        if riot_client is None:
-                            riot_client = RiotClient(settings.riot_api_key)
-                        try:
-                            entries = await riot_client.get_league_entries_by_puuid(tracked.platform, tracked.puuid)
-                            for entry in entries:
-                                current_snapshot = _snapshot_from_league_entry(
-                                    tracked_player_id=tracked.id,
-                                    platform=tracked.platform,
-                                    queue_type=ranked_queue_type,
-                                    entry=entry,
-                                )
-                                if current_snapshot is not None:
-                                    break
-                        except httpx.HTTPStatusError as e:
-                            self._log.warning(
-                                "ranked_context_live_fetch_http_error",
-                                status=e.response.status_code,
-                                tracked_player_id=str(tracked.id),
-                                queue_type=ranked_queue_type,
-                            )
-                        except Exception:
-                            self._log.exception(
-                                "ranked_context_live_fetch_failed",
-                                tracked_player_id=str(tracked.id),
-                                queue_type=ranked_queue_type,
-                            )
+                    try:
+                        current_snapshot, riot_client = await self._current_rank_snapshot(
+                            settings=settings,
+                            riot_client=riot_client,
+                            tracked_player=tracked,
+                            queue_type=ranked_queue_type,
+                        )
+                    except httpx.HTTPStatusError as e:
+                        self._log.warning(
+                            "ranked_context_live_fetch_http_error",
+                            status=e.response.status_code,
+                            tracked_player_id=str(tracked.id),
+                            queue_type=ranked_queue_type,
+                        )
+                    except Exception:
+                        self._log.exception(
+                            "ranked_context_live_fetch_failed",
+                            tracked_player_id=str(tracked.id),
+                            queue_type=ranked_queue_type,
+                        )
 
                     payload.update(
                         await _ranked_context_for_player(
@@ -376,6 +524,7 @@ class MatchesService:
                             tracked.id,
                             ranked_queue_type,
                             m.game_end_ts or m.game_start_ts,
+                            before_snapshot=before_snapshot,
                             current_snapshot=current_snapshot,
                         )
                     )

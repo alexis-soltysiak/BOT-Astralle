@@ -58,7 +58,6 @@ DISCORD_TOKEN=<discord-token>
 DISCORD_APPLICATION_ID=<discord-application-id>
 DISCORD_GUILD_ID=<discord-guild-id>
 DISCORD_CONSUMER_ID=discord-bot-prod
-DISCORD_MATCHES_CHANNEL_ID=<channel-id>
 DISCORD_LEADERBOARD_CHANNEL_ID=<channel-id>
 DISCORD_LIVE_CHANNEL_ID=<channel-id>
 DISCORD_FINISHED_CHANNEL_ID=<channel-id>

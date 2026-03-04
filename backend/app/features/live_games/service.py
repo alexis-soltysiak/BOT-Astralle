@@ -81,6 +81,22 @@ def _select_ranked_state(entries: list[dict], queue_id: int | None) -> dict:
     return _ranked_state_from_entry(preferred_queue or QUEUE_SOLO, None)
 
 
+def _tracked_player_ranked_state(payload: dict, puuid: str, queue_type: str) -> dict | None:
+    participants = payload.get("participants")
+    if not isinstance(participants, list):
+        return None
+
+    state_key = "soloRankedState" if queue_type == QUEUE_SOLO else "flexRankedState"
+    for participant in participants:
+        if not isinstance(participant, dict):
+            continue
+        if str(participant.get("puuid") or "").strip() != puuid:
+            continue
+        state = participant.get(state_key)
+        return state if isinstance(state, dict) else None
+    return None
+
+
 async def _get_champion_name_map() -> dict[int, dict[str, str]]:
     global _CHAMPION_CACHE, _CHAMPION_CACHE_EXPIRES_AT
 
@@ -322,6 +338,22 @@ class LiveGamesService:
                             )
                             enriched_games_by_id[game_id] = cached
                         payload = cached
+                    queue_type = QUEUE_BY_ID.get(_safe_int(payload.get("gameQueueConfigId") or payload.get("queueId")))
+                    if game_id and queue_type and p.puuid:
+                        ranked_state = _tracked_player_ranked_state(payload, p.puuid, queue_type)
+                        if ranked_state is not None:
+                            await self._repo.upsert_ranked_snapshot(
+                                session,
+                                tracked_player_id=p.id,
+                                platform=p.platform,
+                                game_id=game_id,
+                                queue_type=queue_type,
+                                tier=ranked_state.get("tier"),
+                                division=ranked_state.get("division"),
+                                league_points=_safe_int(ranked_state.get("league_points")),
+                                wins=_safe_int(ranked_state.get("wins")),
+                                losses=_safe_int(ranked_state.get("losses")),
+                            )
                     await self._repo.upsert_state(
                         session,
                         tracked_player_id=p.id,

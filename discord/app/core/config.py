@@ -20,12 +20,17 @@ class Settings(BaseSettings):
     publish_poll_interval_seconds: int = 5
     live_refresh_interval_seconds: int = 60
 
-    discord_matches_channel_id: int | None = None
     discord_leaderboard_channel_id: int | None = None
     discord_live_channel_id: int | None = None
     discord_finished_channel_id: int | None = None
 
     discord_guild_id: int | None = None
+
+    llm_match_analysis_enabled: bool = True
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "gpt-4.1-mini"
+    llm_timeout_seconds: float = 12.0
 
 
 @lru_cache

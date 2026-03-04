@@ -29,3 +29,30 @@ class LiveGameState(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class LiveGameRankedSnapshot(Base):
+    __tablename__ = "live_game_ranked_snapshot"
+    __table_args__ = (
+        UniqueConstraint("tracked_player_id", "game_id", "queue_type", name="uq_live_game_ranked_snapshot"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    tracked_player_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tracked_player.id", ondelete="CASCADE"), nullable=False
+    )
+
+    platform: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    game_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    queue_type: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    division: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    league_points: Mapped[int | None] = mapped_column(nullable=True)
+    wins: Mapped[int | None] = mapped_column(nullable=True)
+    losses: Mapped[int | None] = mapped_column(nullable=True)
+
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

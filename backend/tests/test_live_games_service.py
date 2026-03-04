@@ -13,9 +13,13 @@ from app.features.live_games.service import LiveGamesService
 class FakeLiveGamesRepository:
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        self.rank_snapshot_calls: list[dict] = []
 
     async def upsert_state(self, session, **kwargs) -> None:  # type: ignore[no-untyped-def]
         self.calls.append(kwargs)
+
+    async def upsert_ranked_snapshot(self, session, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        self.rank_snapshot_calls.append(kwargs)
 
     async def list_states(self, session):  # type: ignore[no-untyped-def]
         return []
@@ -150,6 +154,19 @@ async def test_refresh_marks_player_live_from_summoner_id_resolved_from_puuid(mo
                     }
                 ],
             },
+        }
+    ]
+    assert repo.rank_snapshot_calls == [
+        {
+            "tracked_player_id": player.id,
+            "platform": "euw1",
+            "game_id": "7758161630",
+            "queue_type": "RANKED_SOLO_5x5",
+            "tier": "GOLD",
+            "division": "II",
+            "league_points": 80,
+            "wins": 10,
+            "losses": 8,
         }
     ]
     assert FakeRiotClient.instances[0].summoner_calls == [("euw1", "tracked-puuid")]

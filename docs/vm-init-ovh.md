@@ -132,7 +132,6 @@ DISCORD_TOKEN=your-discord-token
 DISCORD_APPLICATION_ID=your-discord-application-id
 DISCORD_GUILD_ID=your-discord-guild-id
 DISCORD_CONSUMER_ID=discord-bot-prod
-DISCORD_MATCHES_CHANNEL_ID=your-channel-id
 DISCORD_LEADERBOARD_CHANNEL_ID=your-channel-id
 DISCORD_LIVE_CHANNEL_ID=your-channel-id
 DISCORD_FINISHED_CHANNEL_ID=your-channel-id

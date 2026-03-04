@@ -306,6 +306,17 @@ def _cs_lines(participant: dict, duration: Any) -> str:
     return f"{int(cs)} ({cs_per_min:.1f}/min)"
 
 
+def _arena_placement(participant: dict) -> int | None:
+    payload = _payload_for(participant)
+    if not payload:
+        return None
+    for key in ("subteamPlacement", "placement", "teamPlacement"):
+        placement = _safe_int(payload.get(key))
+        if placement is not None and placement > 0:
+            return placement
+    return None
+
+
 def _game_type_label(mode: str | None, queue_id: int | None, ranked_queue_type: str | None = None) -> str:
     if ranked_queue_type == "RANKED_SOLO_5x5":
         return "SoloQ"
@@ -382,6 +393,35 @@ def _rank_icon(rank: Any) -> str:
     return RANK_ICON.get(value, str(value))
 
 
+def _final_score_rank(participant: dict, score_by_puuid: dict[str, dict]) -> int | None:
+    puuid = str(participant.get("puuid") or "")
+    score_payload = score_by_puuid.get(puuid) or {}
+    if not puuid or not isinstance(score_payload, dict) or not score_payload:
+        return None
+
+    player_score = _safe_float(score_payload.get("final_score"))
+    all_scores = [
+        _safe_float(score.get("final_score"))
+        for score in score_by_puuid.values()
+        if isinstance(score, dict) and str(score.get("puuid") or "")
+    ]
+    if not all_scores:
+        return None
+    return 1 + sum(1 for score in all_scores if score > player_score)
+
+
+def _final_score_line(participant: dict, score_by_puuid: dict[str, dict]) -> str | None:
+    puuid = str(participant.get("puuid") or "")
+    score_payload = score_by_puuid.get(puuid) or {}
+    if not puuid or not isinstance(score_payload, dict) or not score_payload:
+        return None
+
+    final_rank = _final_score_rank(participant, score_by_puuid)
+    if final_rank is None:
+        return None
+    return f"\U0001F3C6 Classement final: **{_rank_icon(final_rank)}/10**"
+
+
 def _categories_summary(score_payload: dict, resolver: EmojiResolver | None = None) -> str:
     cats = score_payload.get("categories")
     if not isinstance(cats, dict):
@@ -400,6 +440,43 @@ def _categories_summary(score_payload: dict, resolver: EmojiResolver | None = No
     return "\n".join(lines) if lines else "Aucun score detaille"
 
 
+def _categories_analysis_details(score_payload: dict) -> list[dict]:
+    cats = score_payload.get("categories")
+    if not isinstance(cats, dict):
+        return []
+
+    details: list[dict] = []
+    for key, label in CATEGORY_META:
+        cat = cats.get(key)
+        if not isinstance(cat, dict):
+            continue
+        rank = _safe_int(cat.get("rank"))
+        total_points = _safe_float(cat.get("total_points"))
+        metrics_raw = cat.get("metrics")
+        metrics: list[dict] = []
+        if isinstance(metrics_raw, list):
+            for metric in metrics_raw:
+                if not isinstance(metric, dict):
+                    continue
+                metrics.append(
+                    {
+                        "label": str(metric.get("label") or "?"),
+                        "value": round(_safe_float(metric.get("value")), 2),
+                        "points": round(_safe_float(metric.get("points")), 2),
+                    }
+                )
+        details.append(
+            {
+                "key": key,
+                "label": label,
+                "rank": rank,
+                "total_points": round(total_points, 2),
+                "metrics": metrics,
+            }
+        )
+    return details
+
+
 def _emoji_asset_url(emoji_markup: str) -> str | None:
     match = re.search(r"<a?:[^:]+:(\d+)>", emoji_markup or "")
     if not match:
@@ -415,12 +492,46 @@ def _avatar_url(tracked: dict) -> str | None:
 
 
 def _focus_participant(participants: list[dict], tracked_by_puuid: dict[str, dict]) -> tuple[dict, dict] | None:
-    tracked_parts = [participant for participant in participants if str(participant.get("puuid") or "") in tracked_by_puuid]
+    tracked_parts = [
+        participant for participant in participants if str(participant.get("puuid") or "") in tracked_by_puuid
+    ]
     if not tracked_parts:
         return None
     participant = tracked_parts[0]
     tracked = tracked_by_puuid.get(str(participant.get("puuid") or ""), {})
     return participant, tracked
+
+
+def _tracked_participants(participants: list[dict], tracked_by_puuid: dict[str, dict]) -> list[tuple[dict, dict]]:
+    tracked_parts: list[tuple[dict, dict]] = []
+    for participant in participants:
+        puuid = str(participant.get("puuid") or "")
+        if not puuid or puuid not in tracked_by_puuid:
+            continue
+        tracked_parts.append((participant, tracked_by_puuid.get(puuid, {})))
+    tracked_parts.sort(key=lambda item: _name_for(item[0], tracked_by_puuid).lower())
+    return tracked_parts
+
+
+def _tracked_summary_lines(
+    tracked_parts: list[tuple[dict, dict]],
+    tracked_by_puuid: dict[str, dict],
+) -> list[str]:
+    lines: list[str] = []
+    for participant, _tracked in tracked_parts:
+        result = participant.get("win")
+        if result is True:
+            result_label = "W"
+        elif result is False:
+            result_label = "L"
+        else:
+            result_label = "?"
+        lines.append(
+            f"`{result_label}` {_name_for(participant, tracked_by_puuid)}"
+            f" | {participant.get('champion_name') or '?'}"
+            f" | {_kda(participant)}"
+        )
+    return lines
 
 
 def _score_badge(
@@ -463,15 +574,74 @@ def _score_badge(
     return ""
 
 
-def build_match_finished_embed(
-    summary: dict,
-    tracked_by_puuid: dict[str, dict],
-    resolver: EmojiResolver | None = None,
-) -> tuple[discord.Embed, discord.File | None, discord.ui.View | None]:
+def should_request_match_analysis(summary: dict) -> bool:
+    queue_id = _safe_int(summary.get("queue_id"))
+    ranked_queue_type = str(summary.get("ranked_queue_type") or "").strip().upper()
+    return ranked_queue_type in {"RANKED_SOLO_5x5", "RANKED_FLEX_SR"} or queue_id in {420, 440}
+
+
+def build_match_analysis_context(summary: dict, tracked_by_puuid: dict[str, dict]) -> dict | None:
+    if not should_request_match_analysis(summary):
+        return None
+
     participants: list[dict] = summary.get("participants") or []
     scores: list[dict] = summary.get("scores") or []
     score_by_puuid = {str(score.get("puuid") or ""): score for score in scores if score.get("puuid")}
     focus = _focus_participant(participants, tracked_by_puuid)
+    if focus is None:
+        return None
+
+    participant, _tracked = focus
+    puuid = str(participant.get("puuid") or "")
+    score_payload = score_by_puuid.get(puuid) or {}
+    if not isinstance(score_payload, dict) or not score_payload:
+        return None
+
+    queue_id = _safe_int(summary.get("queue_id"))
+    ranked_queue_type = summary.get("ranked_queue_type")
+    duration = summary.get("game_duration")
+    final_rank = _final_score_rank(participant, score_by_puuid)
+    final_score = _safe_float(score_payload.get("final_score"))
+    lp_line = _lp_line(score_payload, participant, None)
+    payload = _payload_for(participant)
+
+    return {
+        "player_name": _name_for(participant, tracked_by_puuid),
+        "riot_match_id": str(summary.get("riot_match_id") or ""),
+        "queue": _game_type_label(summary.get("game_mode"), queue_id, ranked_queue_type),
+        "queue_id": queue_id,
+        "ranked_queue_type": ranked_queue_type,
+        "duration": _fmt_duration(duration),
+        "result": "win" if participant.get("win") is True else "loss" if participant.get("win") is False else "unknown",
+        "champion": str(participant.get("champion_name") or "?"),
+        "role": _role_for(participant, score_payload),
+        "kda": _kda(participant),
+        "kp": _kill_participation(participant, participants),
+        "cs": _cs_lines(participant, duration),
+        "final_score": round(final_score, 2),
+        "final_rank": final_rank,
+        "rank_before": score_payload.get("rank_before"),
+        "rank_after": score_payload.get("rank_after"),
+        "rank_delta_lp": _safe_int(score_payload.get("rank_delta_lp")),
+        "lp_line": lp_line,
+        "notes_summary": _categories_summary(score_payload, None),
+        "category_details": _categories_analysis_details(score_payload),
+        "spells": [payload.get("summoner1Id"), payload.get("summoner2Id")],
+        "items": [payload.get(f"item{i}") for i in range(7)],
+    }
+
+
+def build_match_finished_embed(
+    summary: dict,
+    tracked_by_puuid: dict[str, dict],
+    resolver: EmojiResolver | None = None,
+    analysis_payload: dict | None = None,
+) -> tuple[discord.Embed, discord.File | None, discord.ui.View | None]:
+    participants: list[dict] = summary.get("participants") or []
+    scores: list[dict] = summary.get("scores") or []
+    score_by_puuid = {str(score.get("puuid") or ""): score for score in scores if score.get("puuid")}
+    tracked_parts = _tracked_participants(participants, tracked_by_puuid)
+    focus = tracked_parts[0] if tracked_parts else None
 
     embed = discord.Embed(color=discord.Color.blurple())
     if focus is None:
@@ -482,9 +652,11 @@ def build_match_finished_embed(
     participant, tracked = focus
     puuid = str(participant.get("puuid") or "")
     player_name = _name_for(participant, tracked_by_puuid)
+    tracked_names = [_name_for(row, tracked_by_puuid) for row, _tracked in tracked_parts]
     score_payload = score_by_puuid.get(puuid) or {}
     queue_id = _safe_int(summary.get("queue_id"))
     ranked_queue_type = summary.get("ranked_queue_type")
+    is_unscored_mode = _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type)
     mode = _game_type_label(summary.get("game_mode"), queue_id, ranked_queue_type)
     duration = summary.get("game_duration")
     role = _role_for(participant, score_payload if isinstance(score_payload, dict) else {})
@@ -493,12 +665,14 @@ def build_match_finished_embed(
     champ_icon = resolver.champ_from_filename(champ) if resolver is not None else ""
     champion_icon_url = _emoji_asset_url(champ_icon)
     avatar_url = _avatar_url(tracked)
+    analysis_embed: discord.Embed | None = None
+    author_name = player_name if len(tracked_names) <= 1 else f"{player_name} +{len(tracked_names) - 1}"
     if champion_icon_url:
-        embed.set_author(name=player_name, icon_url=champion_icon_url)
+        embed.set_author(name=author_name, icon_url=champion_icon_url)
     elif avatar_url:
-        embed.set_author(name=player_name, icon_url=avatar_url)
+        embed.set_author(name=author_name, icon_url=avatar_url)
     else:
-        embed.set_author(name=player_name)
+        embed.set_author(name=author_name)
 
     win = participant.get("win")
     if win is True:
@@ -510,14 +684,14 @@ def build_match_finished_embed(
     spells_runes, items_line = _loadout_lines(participant, resolver)
 
     lp_line = None
-    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type):
+    if not is_unscored_mode:
         lp_line = _lp_line(score_payload if isinstance(score_payload, dict) else {}, participant, resolver)
     if lp_line:
         title_line = lp_line
     else:
         title_line = ""
     badge_line = ""
-    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type):
+    if not is_unscored_mode:
         badge_line = _score_badge(participant, score_by_puuid, participants, resolver)
 
     info_lines = []
@@ -530,22 +704,27 @@ def build_match_finished_embed(
     info_lines.append(f"\u23F1\uFE0F {_fmt_duration(duration)}")
 
     file: discord.File | None = None
-    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type) and isinstance(score_payload, dict) and score_payload:
+    if not is_unscored_mode and isinstance(score_payload, dict) and score_payload:
         final_score = _safe_float(score_payload.get("final_score"))
         file = make_score_png(final_score)
         if file is not None:
             embed.set_thumbnail(url="attachment://score.png")
 
-    stats_value = "\n".join(
-        [
-            f"\u2694\uFE0F KDA: **{_kda(participant)}**",
-            f"\U0001F91D KP: **{_kill_participation(participant, participants)}**",
-            f"\U0001F33E CS: **{_cs_lines(participant, duration)}**",
-        ]
-    )
+    stats_lines: list[str] = [f"\u2694\uFE0F KDA: **{_kda(participant)}**"]
+    arena_placement = _arena_placement(participant) if queue_id == 1700 else None
+    if arena_placement is not None:
+        stats_lines.append(f"\U0001F3C6 TOP **{arena_placement}**")
+    else:
+        stats_lines.append(f"\U0001F91D KP: **{_kill_participation(participant, participants)}**")
+        stats_lines.append(f"\U0001F33E CS: **{_cs_lines(participant, duration)}**")
+    stats_value = "\n".join(stats_lines)
 
     embed.add_field(name=BLANK, value="\n".join(info_lines), inline=True)
     embed.add_field(name=BLANK, value=stats_value, inline=True)
+
+    tracked_summary_lines = _tracked_summary_lines(tracked_parts, tracked_by_puuid)
+    if len(tracked_summary_lines) > 1:
+        embed.add_field(name="Tracked players", value="\n".join(tracked_summary_lines[:6]), inline=False)
 
     loadout_value_lines: list[str] = []
     if spells_runes:
@@ -555,11 +734,26 @@ def build_match_finished_embed(
     if loadout_value_lines:
         embed.add_field(name=BLANK, value="\n".join(loadout_value_lines), inline=False)
 
-    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type) and isinstance(score_payload, dict) and score_payload:
-        embed.add_field(name="Notes :", value=_categories_summary(score_payload, resolver), inline=False)
+    if not is_unscored_mode and isinstance(score_payload, dict) and score_payload:
+        notes_lines: list[str] = []
+        final_score_line = _final_score_line(participant, score_by_puuid)
+        if final_score_line:
+            notes_lines.append(final_score_line)
+        notes_lines.append(_categories_summary(score_payload, resolver))
+        embed.add_field(name="Notes :", value="\n".join(notes_lines), inline=False)
 
     view: discord.ui.View | None = None
-    if not _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type) and isinstance(score_payload, dict) and score_payload:
+    if not is_unscored_mode and isinstance(score_payload, dict) and score_payload:
+        if analysis_payload:
+            from app.features.matches.analysis import build_match_advice_embed
+
+            analysis_embed = build_match_advice_embed(
+                analysis_payload=analysis_payload,
+                player_name=player_name,
+                author_name=player_name,
+                author_icon_url=champion_icon_url or avatar_url,
+                embed_color=embed.color,
+            )
         view = MatchScoreBreakdownView(
             base_embed=embed,
             score_payload=score_payload,
@@ -568,6 +762,7 @@ def build_match_finished_embed(
             author_name=player_name,
             embed_color=embed.color,
             resolver=resolver,
+            analysis_embed=analysis_embed,
         )
 
     match_datetime = _fmt_match_datetime(summary.get("game_end_ts")) or _fmt_match_datetime(

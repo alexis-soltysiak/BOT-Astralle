@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.emoji_resolver import EmojiResolver
 from app.core.logging import configure_logging
 from app.features.discord_bindings.bootstrap import bootstrap_bindings
+from app.features.matches.analysis import MatchAnalysisClient
 from app.features.matches.publisher import run_outbox_publisher
 from app.features.pinned.leaderboard import ensure_leaderboard_message, refresh_leaderboard_message
 from app.features.pinned.live_games import ensure_live_message, refresh_live_message
@@ -26,6 +27,13 @@ class App(discord.Client):
         self.log = structlog.get_logger("discord")
         self.tree = app_commands.CommandTree(self)
         self.emoji = EmojiResolver(self, application_id=self.settings.discord_application_id)
+        self.match_analyst = MatchAnalysisClient(
+            enabled=self.settings.llm_match_analysis_enabled,
+            api_key=self.settings.llm_api_key,
+            base_url=self.settings.llm_base_url,
+            model=self.settings.llm_model,
+            timeout_seconds=self.settings.llm_timeout_seconds,
+        )
         self._publisher_task: asyncio.Task | None = None
         self._pinned_started = False
         self._live_task: asyncio.Task | None = None
@@ -240,6 +248,7 @@ async def run() -> None:
     try:
         await app.start(settings.discord_token)
     finally:
+        await app.match_analyst.aclose()
         await backend.aclose()
 
 

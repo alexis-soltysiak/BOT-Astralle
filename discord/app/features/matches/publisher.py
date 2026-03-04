@@ -110,7 +110,14 @@ async def run_outbox_publisher(
                         await backend.ack_publication_event(ev_id, ok=True)
                         continue
                     resolver = getattr(bot, "emoji", None)
-                    embed, file, view = build_match_finished_embed(summary, tracked_by_puuid, resolver)
+                    analyst = getattr(bot, "match_analyst", None)
+                    analysis_payload = None if analyst is None else await analyst.generate(summary, tracked_by_puuid)
+                    embed, file, view = build_match_finished_embed(
+                        summary,
+                        tracked_by_puuid,
+                        resolver,
+                        analysis_payload=analysis_payload,
+                    )
 
                     if file is None and view is None:
                         await ch.send(embed=embed)  # type: ignore[attr-defined]

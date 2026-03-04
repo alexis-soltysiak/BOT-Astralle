@@ -73,7 +73,14 @@ def register(tree: app_commands.CommandTree, backend: BackendClient) -> None:
             )
             return
         resolver = getattr(interaction.client, "emoji", None)
-        embed, file, view = build_match_finished_embed(summary, tracked_by_puuid, resolver)
+        analyst = getattr(interaction.client, "match_analyst", None)
+        analysis_payload = None if analyst is None else await analyst.generate(summary, tracked_by_puuid)
+        embed, file, view = build_match_finished_embed(
+            summary,
+            tracked_by_puuid,
+            resolver,
+            analysis_payload=analysis_payload,
+        )
         if file is None and view is None:
             await interaction.response.send_message(embed=embed)
         elif file is None:

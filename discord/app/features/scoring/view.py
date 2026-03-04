@@ -32,6 +32,7 @@ class MatchScoreBreakdownView(discord.ui.View):
         author_icon_url: str | None = None,
         embed_color: discord.Color | None = None,
         resolver: EmojiResolver | None = None,
+        analysis_embed: discord.Embed | None = None,
     ):
         super().__init__(timeout=None)
         self._base_embed = base_embed.copy()
@@ -41,12 +42,20 @@ class MatchScoreBreakdownView(discord.ui.View):
         self._author_icon_url = author_icon_url
         self._embed_color = embed_color
         self._resolver = resolver
+        self._analysis_embed = analysis_embed.copy() if analysis_embed is not None else None
         role = str(score_payload.get("role") or "UNKNOWN")
         self.btn_role.label = _role_label(role)
+        self.btn_advice.disabled = analysis_embed is None
 
     async def _edit(self, interaction: discord.Interaction, cat: str | None) -> None:
         if cat is None:
             await interaction.response.edit_message(embed=self._base_embed, view=self)
+            return
+        if cat == "analysis":
+            if self._analysis_embed is None:
+                await interaction.response.edit_message(embed=self._base_embed, view=self)
+                return
+            await interaction.response.edit_message(embed=self._analysis_embed, view=self)
             return
 
         embed = build_category_breakdown_embed(
@@ -68,6 +77,15 @@ class MatchScoreBreakdownView(discord.ui.View):
     )
     async def btn_back(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._edit(interaction, None)
+
+    @discord.ui.button(
+        label="Conseils",
+        style=discord.ButtonStyle.success,
+        custom_id="score_advice",
+        row=0,
+    )
+    async def btn_advice(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._edit(interaction, "analysis")
 
     @discord.ui.button(label="Global", style=discord.ButtonStyle.secondary, custom_id="score_global", row=1)
     async def btn_global(self, interaction: discord.Interaction, button: discord.ui.Button):
