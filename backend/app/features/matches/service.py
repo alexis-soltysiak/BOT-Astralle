@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,7 +17,13 @@ from app.features.matches.repository import MatchesRepository
 from app.features.publications.repository import PublicationsRepository
 from app.features.tracked_players.repository import TrackedPlayersRepository
 from app.infra.riot_client import RiotClient
-from app.features.matches.schemas import MatchSummaryOut, MatchParticipantOut
+from app.features.matches.schemas import (
+    MatchParticipantOut,
+    MatchSummaryOut,
+    RecentPlayerAggregatesOut,
+    RecentPlayerAnalysisOut,
+    RecentPlayerMatchOut,
+)
 from app.features.scoring.engine import compute_match_scoring
 from app.features.scoring.models import MatchScore
 from sqlalchemy import select
@@ -178,6 +185,128 @@ async def _ranked_context_for_player(
 
 def _payload_has_ranked_context(payload: dict) -> bool:
     return any(key in payload for key in ("rank_before", "rank_after", "rank_delta_lp"))
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return None
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).strip())
+    except Exception:
+        return None
+
+
+def _avg(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def _score_rank(score_payload: dict, score_rows: list[dict]) -> int | None:
+    player_score = _safe_float(score_payload.get("final_score"))
+    if player_score is None:
+        return None
+    all_scores = [
+        _safe_float(item.get("final_score"))
+        for item in score_rows
+        if isinstance(item, dict) and str(item.get("puuid") or "").strip()
+    ]
+    all_scores = [value for value in all_scores if value is not None]
+    if not all_scores:
+        return None
+    return 1 + sum(1 for value in all_scores if value > player_score)
+
+
+def _participant_payload(participant: dict) -> dict:
+    payload = participant.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _role_for(participant: dict, score_payload: dict) -> str | None:
+    role = str(score_payload.get("role") or "").upper().strip()
+    if role in {"TOP", "JUNGLE", "MID", "ADC", "SUPPORT"}:
+        return role
+
+    payload = _participant_payload(participant)
+    raw = str(payload.get("teamPosition") or payload.get("individualPosition") or "").upper().strip()
+    if raw == "MIDDLE":
+        return "MID"
+    if raw in {"BOTTOM", "BOT"}:
+        return "ADC"
+    if raw == "UTILITY":
+        return "SUPPORT"
+    if raw in {"TOP", "JUNGLE", "MID", "ADC", "SUPPORT"}:
+        return raw
+    return None
+
+
+def _game_type_label(mode: str | None, queue_id: int | None, ranked_queue_type: str | None = None) -> str:
+    if ranked_queue_type == QUEUE_SOLO:
+        return "SoloQ"
+    if ranked_queue_type == QUEUE_FLEX:
+        return "Flex"
+    if queue_id == 450:
+        return "ARAM"
+    if queue_id == 1700:
+        return "Arena"
+    if mode:
+        return mode.title()
+    if queue_id is not None:
+        return f"Queue {queue_id}"
+    return "Unknown"
+
+
+def _kda_line(kills: int | None, deaths: int | None, assists: int | None) -> str:
+    kills_s = kills if kills is not None else "?"
+    deaths_s = deaths if deaths is not None else "?"
+    assists_s = assists if assists is not None else "?"
+    return f"{kills_s}/{deaths_s}/{assists_s}"
+
+
+def _team_kills(participants: list[dict], team_id: int | None) -> float:
+    if team_id is None:
+        return 0.0
+    return sum(
+        float(_safe_int(p.get("kills")) or 0)
+        for p in participants
+        if _safe_int(p.get("team_id")) == team_id
+    )
+
+
+def _kill_participation(participant: dict, participants: list[dict]) -> float | None:
+    team_id = _safe_int(participant.get("team_id"))
+    team_total = _team_kills(participants, team_id)
+    if team_total <= 0:
+        return None
+    kills = float(_safe_int(participant.get("kills")) or 0)
+    assists = float(_safe_int(participant.get("assists")) or 0)
+    return round((kills + assists) * 100.0 / team_total, 2)
+
+
+def _cs_per_min(participant: dict, duration_seconds: int | None) -> float | None:
+    payload = _participant_payload(participant)
+    if not payload or duration_seconds is None or duration_seconds <= 0:
+        return None
+    lane = float(_safe_int(payload.get("totalMinionsKilled")) or 0)
+    jungle = float(_safe_int(payload.get("neutralMinionsKilled")) or 0)
+    return round((lane + jungle) / (duration_seconds / 60.0), 2)
 
 
 class MatchesService:
@@ -558,4 +687,172 @@ class MatchesService:
                 for p in parts
             ],
             scores=score_payloads,
+        )
+
+    async def get_recent_player_analysis(
+        self,
+        session: AsyncSession,
+        *,
+        puuid: str,
+        limit: int = 20,
+    ) -> RecentPlayerAnalysisOut | None:
+        raw_puuid = str(puuid or "").strip()
+        if not raw_puuid:
+            return None
+
+        tracked_player = await self._players_repo.get_by_puuid(session, raw_puuid)
+        if tracked_player is None:
+            return None
+
+        bounded_limit = max(1, min(int(limit or 20), 20))
+        matches = await self._repo.list_matches_by_participant_puuid(session, raw_puuid, bounded_limit)
+
+        rows: list[RecentPlayerMatchOut] = []
+        win_count = 0
+        loss_count = 0
+
+        scores_for_avg: list[float] = []
+        ranks_for_avg: list[float] = []
+        kills_for_avg: list[float] = []
+        deaths_for_avg: list[float] = []
+        assists_for_avg: list[float] = []
+        kp_for_avg: list[float] = []
+        cs_for_avg: list[float] = []
+        duration_for_avg: list[float] = []
+        lp_deltas: list[int] = []
+
+        champion_counter: Counter[str] = Counter()
+        role_counter: Counter[str] = Counter()
+        queue_counter: Counter[str] = Counter()
+
+        for match in matches:
+            summary = await self.get_summary(session, match.riot_match_id)
+            if summary is None:
+                continue
+
+            participant = next(
+                (p for p in summary.participants if str(p.puuid or "").strip() == raw_puuid),
+                None,
+            )
+            if participant is None:
+                continue
+
+            score_payload = next(
+                (
+                    s
+                    for s in summary.scores
+                    if isinstance(s, dict) and str(s.get("puuid") or "").strip() == raw_puuid
+                ),
+                {},
+            )
+            score_rows = [s for s in summary.scores if isinstance(s, dict)]
+
+            kills = _safe_int(participant.kills)
+            deaths = _safe_int(participant.deaths)
+            assists = _safe_int(participant.assists)
+            final_score = _safe_float(score_payload.get("final_score"))
+            final_rank = _score_rank(score_payload, score_rows)
+            queue_label = _game_type_label(summary.game_mode, summary.queue_id, summary.ranked_queue_type)
+            role = _role_for(participant.model_dump(), score_payload)
+            kp = _kill_participation(
+                participant.model_dump(),
+                [item.model_dump() for item in summary.participants],
+            )
+            cs_pm = _cs_per_min(participant.model_dump(), summary.game_duration)
+            lp_delta = _safe_int(score_payload.get("rank_delta_lp"))
+
+            result = "win" if participant.win is True else "loss" if participant.win is False else "unknown"
+            if result == "win":
+                win_count += 1
+            elif result == "loss":
+                loss_count += 1
+
+            if participant.champion_name:
+                champion_counter[participant.champion_name] += 1
+            if role:
+                role_counter[role] += 1
+            queue_counter[queue_label] += 1
+
+            if final_score is not None:
+                scores_for_avg.append(final_score)
+            if final_rank is not None:
+                ranks_for_avg.append(float(final_rank))
+            if kills is not None:
+                kills_for_avg.append(float(kills))
+            if deaths is not None:
+                deaths_for_avg.append(float(deaths))
+            if assists is not None:
+                assists_for_avg.append(float(assists))
+            if kp is not None:
+                kp_for_avg.append(kp)
+            if cs_pm is not None:
+                cs_for_avg.append(cs_pm)
+            if summary.game_duration and summary.game_duration > 0:
+                duration_for_avg.append(round(summary.game_duration / 60.0, 2))
+            if lp_delta is not None:
+                lp_deltas.append(lp_delta)
+
+            rows.append(
+                RecentPlayerMatchOut(
+                    riot_match_id=summary.riot_match_id,
+                    queue_label=queue_label,
+                    champion_name=participant.champion_name,
+                    role=role,
+                    result=result,
+                    kills=kills,
+                    deaths=deaths,
+                    assists=assists,
+                    kda=_kda_line(kills, deaths, assists),
+                    kill_participation=kp,
+                    cs_per_min=cs_pm,
+                    final_score=round(final_score, 2) if final_score is not None else None,
+                    final_rank=final_rank,
+                    rank_delta_lp=lp_delta,
+                    rank_after=str(score_payload.get("rank_after") or "").strip() or None,
+                    game_end_ts=summary.game_end_ts,
+                )
+            )
+
+        total = len(rows)
+        recent_scores = [row.final_score for row in rows if row.final_score is not None]
+        last5_avg = _avg([value for value in recent_scores[:5] if value is not None])
+        prev5_avg = _avg([value for value in recent_scores[5:10] if value is not None])
+        trend_delta = None
+        if last5_avg is not None and prev5_avg is not None:
+            trend_delta = round(last5_avg - prev5_avg, 2)
+
+        aggregates = RecentPlayerAggregatesOut(
+            matches_count=total,
+            wins=win_count,
+            losses=loss_count,
+            win_rate=round((win_count * 100.0 / total), 2) if total else 0.0,
+            avg_final_score=_avg(scores_for_avg),
+            avg_final_rank=_avg(ranks_for_avg),
+            avg_kills=_avg(kills_for_avg),
+            avg_deaths=_avg(deaths_for_avg),
+            avg_assists=_avg(assists_for_avg),
+            avg_kp=_avg(kp_for_avg),
+            avg_cs_per_min=_avg(cs_for_avg),
+            avg_game_duration_minutes=_avg(duration_for_avg),
+            avg_rank_delta_lp=_avg([float(delta) for delta in lp_deltas]),
+            total_rank_delta_lp=sum(lp_deltas) if lp_deltas else None,
+            last5_avg_score=last5_avg,
+            previous5_avg_score=prev5_avg,
+            score_trend_delta=trend_delta,
+            top_champions=[f"{name} ({count})" for name, count in champion_counter.most_common(3)],
+            role_distribution={name: count for name, count in role_counter.most_common()},
+            queue_distribution={name: count for name, count in queue_counter.most_common()},
+        )
+
+        return RecentPlayerAnalysisOut(
+            player={
+                "id": str(tracked_player.id),
+                "puuid": str(tracked_player.puuid or ""),
+                "game_name": tracked_player.game_name,
+                "tag_line": tracked_player.tag_line,
+                "discord_user_id": tracked_player.discord_user_id,
+                "discord_display_name": tracked_player.discord_display_name,
+            },
+            aggregates=aggregates,
+            matches=rows,
         )

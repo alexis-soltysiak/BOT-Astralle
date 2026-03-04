@@ -138,6 +138,93 @@ def _normalize_confidence(value: object) -> str:
     return "medium"
 
 
+def _build_recent_form_prompt(payload: dict) -> str:
+    player = payload.get("player") or {}
+    aggregates = payload.get("aggregates") or {}
+    matches = payload.get("matches") or []
+
+    lines: list[str] = []
+    for row in matches:
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            (
+                f"- {row.get('queue_label')} | {row.get('champion_name') or '?'} | {row.get('role') or '?'} | "
+                f"{str(row.get('result') or '').upper()} | score={row.get('final_score')} | rank={row.get('final_rank')}/10 | "
+                f"KDA={row.get('kda')} | KP={row.get('kill_participation')} | CS/min={row.get('cs_per_min')} | LP={row.get('rank_delta_lp')}"
+            )
+        )
+
+    prompt = [
+        "Analyse une serie des 20 dernieres games League of Legends comme un analyste pro tres concret.",
+        "Reponds en francais avec un JSON strict, sans markdown.",
+        "Tu dois te baser sur les tendances globales et les patterns repetes (pas sur 1 seule game).",
+        "Schema JSON obligatoire:",
+        '{"headline":"string","summary":"string","strengths":["string"],"improvements":["string"],"next_steps":["string"],"key_focus":"string","confidence":"low|medium|high"}',
+        "Contraintes:",
+        '- "headline": 4 a 8 mots',
+        '- "summary": 20 mots max',
+        '- "strengths": exactement 3 points',
+        '- "improvements": exactement 3 points',
+        '- "next_steps": exactement 3 actions claires',
+        '- "key_focus": 5 mots max',
+        "Style: direct, actionnable, specifique SoloQ/Flex, niveau coach haut elo.",
+        "",
+        f"Joueur: {player.get('discord_display_name') or player.get('game_name') or 'Unknown'}",
+        f"Riot ID: {(player.get('game_name') or '?')}#{(player.get('tag_line') or '?')}",
+        f"Games analysees: {aggregates.get('matches_count')}",
+        f"Winrate: {aggregates.get('win_rate')}%",
+        f"Record: {aggregates.get('wins')}W/{aggregates.get('losses')}L",
+        f"Score moyen: {aggregates.get('avg_final_score')}",
+        f"Place moyenne: {aggregates.get('avg_final_rank')}/10",
+        f"KDA moyen: {aggregates.get('avg_kills')}/{aggregates.get('avg_deaths')}/{aggregates.get('avg_assists')}",
+        f"KP moyen: {aggregates.get('avg_kp')}%",
+        f"CS/min moyen: {aggregates.get('avg_cs_per_min')}",
+        f"LP moyen/game: {aggregates.get('avg_rank_delta_lp')}",
+        f"LP total: {aggregates.get('total_rank_delta_lp')}",
+        f"Trend score (last5-prev5): {aggregates.get('score_trend_delta')}",
+        f"Top champions: {json.dumps(aggregates.get('top_champions') or [], ensure_ascii=True)}",
+        f"Role distribution: {json.dumps(aggregates.get('role_distribution') or {}, ensure_ascii=True)}",
+        f"Queue distribution: {json.dumps(aggregates.get('queue_distribution') or {}, ensure_ascii=True)}",
+        "Timeline recente:",
+        *lines[:20],
+    ]
+    return "\n".join(prompt)
+
+
+def _normalize_recent_form_payload(raw: str) -> dict | None:
+    json_text = _extract_json_text(raw)
+    if not json_text:
+        return None
+    try:
+        data = json.loads(json_text)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    headline = _normalize_line(data.get("headline"), limit=72)
+    summary = _normalize_line(data.get("summary"), limit=180)
+    strengths = _normalize_list(data.get("strengths"), limit=3, item_limit=80)
+    improvements = _normalize_list(data.get("improvements"), limit=3, item_limit=80)
+    next_steps = _normalize_list(data.get("next_steps"), limit=3, item_limit=80)
+    key_focus = _normalize_line(data.get("key_focus"), limit=64)
+    confidence = _normalize_confidence(data.get("confidence"))
+
+    if not any([headline, summary, strengths, improvements, next_steps, key_focus]):
+        return None
+
+    return {
+        "headline": headline or "Bilan sur 20 games",
+        "summary": summary or "",
+        "strengths": strengths,
+        "improvements": improvements,
+        "next_steps": next_steps,
+        "key_focus": key_focus or "",
+        "confidence": confidence,
+    }
+
+
 def _normalize_analysis_payload(raw: str, context: dict | None = None) -> dict | None:
     json_text = _extract_json_text(raw)
     if not json_text:
@@ -221,6 +308,62 @@ def build_match_advice_embed(
     return embed
 
 
+def build_recent_form_advice_embed(
+    *,
+    player_name: str,
+    aggregates: dict,
+    analysis_payload: dict | None,
+    author_icon_url: str | None = None,
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"Analyse PRO - 20 games - {player_name}",
+        color=discord.Color.blurple(),
+    )
+    if author_icon_url:
+        embed.set_author(name=player_name, icon_url=author_icon_url)
+    else:
+        embed.set_author(name=player_name)
+
+    win_rate = aggregates.get("win_rate")
+    record = f"{aggregates.get('wins', 0)}W/{aggregates.get('losses', 0)}L"
+    perf_line = (
+        f"WR **{win_rate}%** | Score **{aggregates.get('avg_final_score')}** | "
+        f"Place **{aggregates.get('avg_final_rank')}/10**"
+    )
+    lp_line = f"LP/game **{aggregates.get('avg_rank_delta_lp')}** | LP total **{aggregates.get('total_rank_delta_lp')}**"
+    embed.add_field(name="Snapshot", value=f"{record}\n{perf_line}\n{lp_line}", inline=False)
+
+    if not analysis_payload:
+        embed.add_field(
+            name="Conseils",
+            value="LLM indisponible ou aucune sortie exploitable.",
+            inline=False,
+        )
+        return embed
+
+    summary = str(analysis_payload.get("summary") or "").strip()
+    if summary:
+        embed.add_field(name="Lecture", value=summary, inline=False)
+
+    strengths = analysis_payload.get("strengths") or []
+    if strengths:
+        embed.add_field(name="Points forts", value="\n".join(f"• {item}" for item in strengths), inline=False)
+
+    improvements = analysis_payload.get("improvements") or []
+    if improvements:
+        embed.add_field(name="A corriger", value="\n".join(f"• {item}" for item in improvements), inline=False)
+
+    next_steps = analysis_payload.get("next_steps") or []
+    if next_steps:
+        embed.add_field(name="Plan d'action", value="\n".join(f"• {item}" for item in next_steps), inline=False)
+
+    key_focus = str(analysis_payload.get("key_focus") or "").strip()
+    confidence = str(analysis_payload.get("confidence") or "medium")
+    footer = f"Focus: {key_focus}" if key_focus else "Focus: Execution reguliere"
+    embed.set_footer(text=f"{footer} | confiance: {confidence}")
+    return embed
+
+
 class MatchAnalysisClient:
     def __init__(
         self,
@@ -249,11 +392,17 @@ class MatchAnalysisClient:
         if self._client is not None:
             await self._client.aclose()
 
-    async def generate(self, summary: dict, tracked_by_puuid: dict[str, dict]) -> dict | None:
+    async def generate(
+        self,
+        summary: dict,
+        tracked_by_puuid: dict[str, dict],
+        *,
+        focus_puuid: str | None = None,
+    ) -> dict | None:
         if self._client is None or not self._model:
             return None
 
-        context = build_match_analysis_context(summary, tracked_by_puuid)
+        context = build_match_analysis_context(summary, tracked_by_puuid, focus_puuid=focus_puuid)
         if context is None:
             return None
 
@@ -300,4 +449,53 @@ class MatchAnalysisClient:
             return None
         except Exception as e:
             self._log.warning("match_analysis_failed", error=str(e))
+            return None
+
+    async def generate_recent_form(self, payload: dict) -> dict | None:
+        if self._client is None or not self._model:
+            return None
+
+        try:
+            response = await self._client.post(
+                "/chat/completions",
+                json={
+                    "model": self._model,
+                    "max_completion_tokens": 1200,
+                    "reasoning_effort": "minimal",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Tu es un coach LoL elite. "
+                                "Tu fais une analyse de tendances sur 20 games, precise et actionnable."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": _build_recent_form_prompt(payload),
+                        },
+                    ],
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices")
+            if not isinstance(choices, list) or not choices:
+                return None
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if not isinstance(message, dict):
+                return None
+            content = message.get("content")
+            if isinstance(content, str):
+                return _normalize_recent_form_payload(content)
+            if isinstance(content, list):
+                parts = [
+                    str(item.get("text") or "").strip()
+                    for item in content
+                    if isinstance(item, dict) and str(item.get("type") or "") == "text"
+                ]
+                return _normalize_recent_form_payload("\n".join(part for part in parts if part))
+            return None
+        except Exception as e:
+            self._log.warning("recent_form_analysis_failed", error=str(e))
             return None

@@ -1,4 +1,9 @@
-from app.features.matches.analysis import _build_prompt, _normalize_analysis_payload
+from app.features.matches.analysis import (
+    _build_prompt,
+    _build_recent_form_prompt,
+    _normalize_analysis_payload,
+    _normalize_recent_form_payload,
+)
 from app.features.matches.embeds import build_match_analysis_context, should_request_match_analysis
 
 
@@ -120,24 +125,89 @@ def test_prompt_and_normalization() -> None:
     assert "Joueur: Alex" in prompt
     assert "Schema JSON obligatoire:" in prompt
     assert "Score final: 88.3/100" in prompt
-    assert 'exactement 3 points' in prompt
+    assert "exactement 3 points" in prompt
     assert "priorite lane" in prompt
     normalized = _normalize_analysis_payload(
         """
         {
-          "headline": "🎯 Bonne game de tempo",
-          "summary": "🧠 Tu as bien converti ton avance.",
-          "strengths": ["✅ Bons timings de trade", "💥 Bonne pression mid", "🧭 Bons roams", "➕ Extra"],
-          "improvements": ["⚠️ Trop de greed avant reset", "🧱 Mieux timer recalls", "➖ Extra"],
-          "next_steps": ["📍 Push puis ward river", "🛒 Reset sur spike item", "🎯 Punir flash mid"],
-          "key_focus": "📌 Stabiliser tes resets",
+          "headline": "Bonne game de tempo",
+          "summary": "Tu as bien converti ton avance.",
+          "strengths": ["Bons timings de trade", "Bonne pression mid", "Bons roams", "Extra"],
+          "improvements": ["Trop de greed avant reset", "Mieux timer recalls", "Extra"],
+          "next_steps": ["Push puis ward river", "Reset sur spike item", "Punir flash mid"],
+          "key_focus": "Stabiliser tes resets",
+          "confidence": "high"
+        }
+        """,
+        context,
+    )
+    assert normalized is not None
+    assert normalized["headline"] == "Bonne game de tempo"
+    assert normalized["confidence"] == "high"
+    assert normalized["strengths"][0] == "Bons timings de trade"
+    assert len(normalized["strengths"]) == 3
+    assert len(normalized["improvements"]) == 2
+
+
+def test_recent_form_prompt_and_normalization() -> None:
+    payload = {
+        "player": {
+            "game_name": "Astral",
+            "tag_line": "EUW",
+            "discord_display_name": "Alex",
+        },
+        "aggregates": {
+            "matches_count": 20,
+            "win_rate": 60.0,
+            "wins": 12,
+            "losses": 8,
+            "avg_final_score": 74.2,
+            "avg_final_rank": 3.1,
+            "avg_kills": 7.2,
+            "avg_deaths": 4.1,
+            "avg_assists": 8.8,
+            "avg_kp": 58.4,
+            "avg_cs_per_min": 6.9,
+            "avg_rank_delta_lp": 11.5,
+            "total_rank_delta_lp": 230,
+            "score_trend_delta": 4.2,
+            "top_champions": ["Ahri (8)", "Orianna (5)"],
+            "role_distribution": {"MID": 20},
+            "queue_distribution": {"SoloQ": 20},
+        },
+        "matches": [
+            {
+                "queue_label": "SoloQ",
+                "champion_name": "Ahri",
+                "role": "MID",
+                "result": "win",
+                "final_score": 85.2,
+                "final_rank": 1,
+                "kda": "10/2/8",
+                "kill_participation": 62.0,
+                "cs_per_min": 7.3,
+                "rank_delta_lp": 21,
+            }
+        ],
+    }
+    prompt = _build_recent_form_prompt(payload)
+    assert "Analyse une serie des 20 dernieres games" in prompt
+    assert "Games analysees: 20" in prompt
+    assert "Top champions" in prompt
+
+    normalized = _normalize_recent_form_payload(
+        """
+        {
+          "headline": "Analyse claire de ta forme",
+          "summary": "Bonne dynamique globale, mais execution irreguliere sur les resets en mid game.",
+          "strengths": ["Bon tempo en lane", "Bon usage des spikes", "Bonne conversion d'avantage"],
+          "improvements": ["Resets tardifs", "Vision avant objectif", "Overchase en side lane"],
+          "next_steps": ["Reset a 1300 gold", "Ward 45s avant drake", "Push puis rotate"],
+          "key_focus": "Tempo reset vision",
           "confidence": "high"
         }
         """
-    , context)
+    )
     assert normalized is not None
-    assert normalized["headline"] == "🎯 Bonne game de tempo"
     assert normalized["confidence"] == "high"
-    assert normalized["strengths"][0] == "✅ Bons timings de trade"
-    assert len(normalized["strengths"]) == 3
-    assert len(normalized["improvements"]) == 2
+    assert len(normalized["next_steps"]) == 3

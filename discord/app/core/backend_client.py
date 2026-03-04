@@ -72,6 +72,10 @@ class BackendClient:
         data = await self._get(f"/api/matches/{riot_match_id}/summary")
         return data  # type: ignore[return-value]
 
+    async def get_recent_player_analysis(self, puuid: str, limit: int = 20) -> dict:
+        data = await self._get(f"/api/matches/players/{puuid}/recent-analysis?limit={limit}")
+        return data  # type: ignore[return-value]
+
     async def claim_publication_events(self, consumer_id: str, limit: int) -> list[dict]:
         data = await self._post("/api/publication-events/claim", {"consumer_id": consumer_id, "limit": limit})
         return data  # type: ignore[return-value]

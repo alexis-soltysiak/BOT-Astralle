@@ -41,6 +41,17 @@ def _avatar_url_for(bot: discord.Client, guild: discord.Guild | None, tracked: d
     return None
 
 
+def _tracked_puuids_in_summary(summary: dict, tracked_by_puuid: dict[str, dict]) -> list[str]:
+    puuids: list[str] = []
+    for participant in summary.get("participants") or []:
+        if not isinstance(participant, dict):
+            continue
+        puuid = str(participant.get("puuid") or "")
+        if puuid and puuid in tracked_by_puuid and puuid not in puuids:
+            puuids.append(puuid)
+    return puuids
+
+
 async def run_outbox_publisher(
     bot: discord.Client,
     backend: BackendClient,
@@ -111,12 +122,17 @@ async def run_outbox_publisher(
                         continue
                     resolver = getattr(bot, "emoji", None)
                     analyst = getattr(bot, "match_analyst", None)
-                    analysis_payload = None if analyst is None else await analyst.generate(summary, tracked_by_puuid)
+                    analysis_payload_by_puuid: dict[str, dict] = {}
+                    if analyst is not None:
+                        for puuid in _tracked_puuids_in_summary(summary, tracked_by_puuid):
+                            payload = await analyst.generate(summary, tracked_by_puuid, focus_puuid=puuid)
+                            if payload:
+                                analysis_payload_by_puuid[puuid] = payload
                     embed, file, view = build_match_finished_embed(
                         summary,
                         tracked_by_puuid,
                         resolver,
-                        analysis_payload=analysis_payload,
+                        analysis_payload_by_puuid=analysis_payload_by_puuid or None,
                     )
 
                     if file is None and view is None:

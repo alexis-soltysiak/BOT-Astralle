@@ -27,12 +27,18 @@ class MatchesRepository:
         )
         return list(res.scalars().all())
 
-    async def list_matches_by_participant_puuid(self, session: AsyncSession, puuid: str) -> list[Match]:
+    async def list_matches_by_participant_puuid(
+        self,
+        session: AsyncSession,
+        puuid: str,
+        limit: int = 20,
+    ) -> list[Match]:
         stmt = (
             select(Match)
             .join(MatchParticipant, MatchParticipant.match_id == Match.id)
             .where(MatchParticipant.puuid == puuid)
             .order_by(Match.created_at.desc())
+            .limit(limit)
         )
         res = await session.execute(stmt)
         return list(res.scalars().all())

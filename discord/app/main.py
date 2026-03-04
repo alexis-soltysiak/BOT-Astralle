@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.emoji_resolver import EmojiResolver
 from app.core.logging import configure_logging
 from app.features.discord_bindings.bootstrap import bootstrap_bindings
+from app.features.matches.commands import register as register_matches_commands
 from app.features.matches.analysis import MatchAnalysisClient
 from app.features.matches.publisher import run_outbox_publisher
 from app.features.pinned.leaderboard import ensure_leaderboard_message, refresh_leaderboard_message
@@ -44,6 +45,7 @@ class App(discord.Client):
             self.backend,
             guild_id=self.settings.discord_guild_id,
         )
+        register_matches_commands(self.tree, self.backend)
 
     async def _clear_bot_messages_in_channel(self, channel_id: int) -> int:
         channel = self.get_channel(channel_id)

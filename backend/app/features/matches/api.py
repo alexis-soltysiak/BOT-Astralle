@@ -11,7 +11,7 @@ from app.features.matches.repository import MatchesRepository
 from app.features.matches.service import MatchesService
 from app.features.publications.repository import PublicationsRepository
 from app.features.tracked_players.repository import TrackedPlayersRepository
-from app.features.matches.schemas import MatchOut, MatchSummaryOut
+from app.features.matches.schemas import MatchOut, MatchSummaryOut, RecentPlayerAnalysisOut
 
 router = APIRouter(tags=["matches"])
 
@@ -71,3 +71,17 @@ async def get_match_summary(
     if s is None:
         raise HTTPException(status_code=404, detail="not_found")
     return s
+
+
+@router.get("/matches/players/{puuid}/recent-analysis", response_model=RecentPlayerAnalysisOut)
+async def get_recent_player_analysis(
+    puuid: str,
+    limit: int = 20,
+    _: str = Depends(require_admin_or_discord_service),
+    session: AsyncSession = Depends(get_session),
+    service: MatchesService = Depends(get_service),
+) -> RecentPlayerAnalysisOut:
+    data = await service.get_recent_player_analysis(session, puuid=puuid, limit=limit)
+    if data is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return data
