@@ -73,6 +73,19 @@ async def get_match_summary(
     return s
 
 
+@router.post("/matches/{riot_match_id}/republish", status_code=status.HTTP_202_ACCEPTED)
+async def republish_match(
+    riot_match_id: str,
+    _: str = Depends(require_admin_frontend_access),
+    session: AsyncSession = Depends(get_session),
+    service: MatchesService = Depends(get_service),
+) -> dict:
+    data = await service.queue_republish(session, riot_match_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return data
+
+
 @router.get("/matches/players/{puuid}/recent-analysis", response_model=RecentPlayerAnalysisOut)
 async def get_recent_player_analysis(
     puuid: str,

@@ -19,6 +19,10 @@ export type MatchParticipant = {
   deaths: number | null;
   assists: number | null;
   win: boolean | null;
+  payload?: {
+    teamPosition?: string | null;
+    individualPosition?: string | null;
+  } | null;
 };
 
 export type MatchSummary = {
@@ -30,4 +34,5 @@ export type MatchSummary = {
   game_end_ts: number | null;
   game_duration: number | null;
   participants: MatchParticipant[];
+  scores?: Array<Record<string, unknown>>;
 };

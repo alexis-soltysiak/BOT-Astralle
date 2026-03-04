@@ -12,3 +12,10 @@ export function ingestMatches() {
 export function getMatchSummary(riotMatchId: string) {
   return apiGet<MatchSummary>(`/api/matches/${encodeURIComponent(riotMatchId)}/summary`);
 }
+
+export function republishMatch(riotMatchId: string) {
+  return apiPost<{ riot_match_id: string; queued: boolean; dedupe_key: string }>(
+    `/api/matches/${encodeURIComponent(riotMatchId)}/republish`,
+    {}
+  );
+}

@@ -1,0 +1,680 @@
+﻿{
+    "version":  "v2.0",
+    "final":  {
+                  "weights":  {
+                                  "global":  0.95,
+                                  "vs_opponent":  1.2,
+                                  "objectives":  0.85,
+                                  "team":  0.9,
+                                  "role":  1.25
+                              },
+                  "alpha_rank_vs_raw":  0.6,
+                  "grade_thresholds":  [
+                                           {
+                                               "grade":  "S+",
+                                               "min":  85.0
+                                           },
+                                           {
+                                               "grade":  "S",
+                                               "min":  75.0
+                                           },
+                                           {
+                                               "grade":  "A",
+                                               "min":  65.0
+                                           },
+                                           {
+                                               "grade":  "B",
+                                               "min":  55.0
+                                           },
+                                           {
+                                               "grade":  "C",
+                                               "min":  45.0
+                                           },
+                                           {
+                                               "grade":  "D",
+                                               "min":  35.0
+                                           },
+                                           {
+                                               "grade":  "F",
+                                               "min":  0.0
+                                           }
+                                       ]
+              },
+    "category_grade_by_rank":  [
+                                   {
+                                       "rank_max":  1,
+                                       "grade":  "S+"
+                                   },
+                                   {
+                                       "rank_max":  2,
+                                       "grade":  "S"
+                                   },
+                                   {
+                                       "rank_max":  4,
+                                       "grade":  "A"
+                                   },
+                                   {
+                                       "rank_max":  6,
+                                       "grade":  "B"
+                                   },
+                                   {
+                                       "rank_max":  8,
+                                       "grade":  "C"
+                                   },
+                                   {
+                                       "rank_max":  9,
+                                       "grade":  "D"
+                                   },
+                                   {
+                                       "rank_max":  10,
+                                       "grade":  "F"
+                                   }
+                               ],
+    "metrics":  {
+                    "global":  {
+                                   "kills":  {
+                                                 "label":  "Kills",
+                                                 "kind":  "linear",
+                                                 "a":  0.8,
+                                                 "b":  0.0,
+                                                 "min":  0.0,
+                                                 "max":  15.0
+                                             },
+                                   "deaths":  {
+                                                  "label":  "Deaths",
+                                                  "kind":  "linear",
+                                                  "a":  -1.5,
+                                                  "b":  0.0,
+                                                  "min":  -30.0,
+                                                  "max":  0.0
+                                              },
+                                   "assists":  {
+                                                   "label":  "Assists",
+                                                   "kind":  "role_linear",
+                                                   "by_role":  {
+                                                                   "SUPPORT":  {
+                                                                                   "a":  0.9,
+                                                                                   "b":  0.0,
+                                                                                   "min":  0.0,
+                                                                                   "max":  25.0
+                                                                               },
+                                                                   "TOP":  {
+                                                                               "a":  0.8,
+                                                                               "b":  0.0,
+                                                                               "min":  0.0,
+                                                                               "max":  20.0
+                                                                           },
+                                                                   "MID":  {
+                                                                               "a":  0.8,
+                                                                               "b":  0.0,
+                                                                               "min":  0.0,
+                                                                               "max":  20.0
+                                                                           },
+                                                                   "ADC":  {
+                                                                               "a":  0.75,
+                                                                               "b":  0.0,
+                                                                               "min":  0.0,
+                                                                               "max":  20.0
+                                                                           },
+                                                                   "JUNGLE":  {
+                                                                                  "a":  0.75,
+                                                                                  "b":  0.0,
+                                                                                  "min":  0.0,
+                                                                                  "max":  20.0
+                                                                              },
+                                                                   "DEFAULT":  {
+                                                                                   "a":  0.75,
+                                                                                   "b":  0.0,
+                                                                                   "min":  0.0,
+                                                                                   "max":  20.0
+                                                                               }
+                                                               }
+                                               },
+                                   "cs_per_min":  {
+                                                      "label":  "CS/min",
+                                                      "kind":  "role_clamp_linear",
+                                                      "by_role":  {
+                                                                      "TOP":  {
+                                                                                  "a":  2.0,
+                                                                                  "b":  -11.0,
+                                                                                  "min":  -5.0,
+                                                                                  "max":  10.0
+                                                                              },
+                                                                      "MID":  {
+                                                                                  "a":  2.1,
+                                                                                  "b":  -11.5,
+                                                                                  "min":  -5.0,
+                                                                                  "max":  10.0
+                                                                              },
+                                                                      "ADC":  {
+                                                                                  "a":  1.8,
+                                                                                  "b":  -11.0,
+                                                                                  "min":  -5.0,
+                                                                                  "max":  10.0
+                                                                              },
+                                                                      "JUNGLE":  {
+                                                                                     "a":  1.6,
+                                                                                     "b":  -7.7,
+                                                                                     "min":  -5.0,
+                                                                                     "max":  10.0
+                                                                                 },
+                                                                      "SUPPORT":  {
+                                                                                      "a":  0.0,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  0.0
+                                                                                  },
+                                                                      "DEFAULT":  {
+                                                                                      "a":  1.9,
+                                                                                      "b":  -10.8,
+                                                                                      "min":  -5.0,
+                                                                                      "max":  10.0
+                                                                                  }
+                                                                  }
+                                                  },
+                                   "gold_per_min":  {
+                                                        "label":  "Gold/min",
+                                                        "kind":  "role_clamp_linear",
+                                                        "by_role":  {
+                                                                        "TOP":  {
+                                                                                    "a":  0.04,
+                                                                                    "b":  -14.0,
+                                                                                    "min":  -6.0,
+                                                                                    "max":  10.0
+                                                                                },
+                                                                        "MID":  {
+                                                                                    "a":  0.04,
+                                                                                    "b":  -14.0,
+                                                                                    "min":  -6.0,
+                                                                                    "max":  10.0
+                                                                                },
+                                                                        "ADC":  {
+                                                                                    "a":  0.04,
+                                                                                    "b":  -14.0,
+                                                                                    "min":  -6.0,
+                                                                                    "max":  10.0
+                                                                                },
+                                                                        "JUNGLE":  {
+                                                                                       "a":  0.05,
+                                                                                       "b":  -14.0,
+                                                                                       "min":  -6.0,
+                                                                                       "max":  10.0
+                                                                                   },
+                                                                        "SUPPORT":  {
+                                                                                        "a":  0.03,
+                                                                                        "b":  -6.0,
+                                                                                        "min":  -6.0,
+                                                                                        "max":  10.0
+                                                                                    },
+                                                                        "DEFAULT":  {
+                                                                                        "a":  0.04,
+                                                                                        "b":  -14.0,
+                                                                                        "min":  -6.0,
+                                                                                        "max":  10.0
+                                                                                    }
+                                                                    }
+                                                    },
+                                   "dmg_per_min":  {
+                                                       "label":  "DMG/min",
+                                                       "kind":  "role_clamp_linear",
+                                                       "by_role":  {
+                                                                       "TOP":  {
+                                                                                   "a":  0.0072,
+                                                                                   "b":  0.0,
+                                                                                   "min":  -3.0,
+                                                                                   "max":  10.0
+                                                                               },
+                                                                       "MID":  {
+                                                                                   "a":  0.0075,
+                                                                                   "b":  0.0,
+                                                                                   "min":  -3.0,
+                                                                                   "max":  10.0
+                                                                               },
+                                                                       "ADC":  {
+                                                                                   "a":  0.0067,
+                                                                                   "b":  0.1,
+                                                                                   "min":  -3.0,
+                                                                                   "max":  10.0
+                                                                               },
+                                                                       "JUNGLE":  {
+                                                                                      "a":  0.0100,
+                                                                                      "b":  1.1,
+                                                                                      "min":  -3.0,
+                                                                                      "max":  10.0
+                                                                                  },
+                                                                       "SUPPORT":  {
+                                                                                       "a":  0.0060,
+                                                                                       "b":  -0.3,
+                                                                                       "min":  -3.0,
+                                                                                       "max":  10.0
+                                                                                   },
+                                                                       "DEFAULT":  {
+                                                                                       "a":  0.0072,
+                                                                                       "b":  0.0,
+                                                                                       "min":  -3.0,
+                                                                                       "max":  10.0
+                                                                                   }
+                                                                   }
+                                                   },
+                                   "vision_per_min":  {
+                                                          "label":  "Vision/min",
+                                                          "kind":  "role_clamp_linear",
+                                                          "by_role":  {
+                                                                          "TOP":  {
+                                                                                      "a":  6.0,
+                                                                                      "b":  -2.4,
+                                                                                      "min":  -3.0,
+                                                                                      "max":  10.0
+                                                                                  },
+                                                                          "MID":  {
+                                                                                      "a":  6.5,
+                                                                                      "b":  -2.6,
+                                                                                      "min":  -3.0,
+                                                                                      "max":  10.0
+                                                                                  },
+                                                                          "ADC":  {
+                                                                                      "a":  7.0,
+                                                                                      "b":  -3.6,
+                                                                                      "min":  -3.0,
+                                                                                      "max":  10.0
+                                                                                  },
+                                                                          "JUNGLE":  {
+                                                                                         "a":  7.0,
+                                                                                         "b":  -2.0,
+                                                                                         "min":  -3.0,
+                                                                                         "max":  10.0
+                                                                                     },
+                                                                          "SUPPORT":  {
+                                                                                          "a":  2.0,
+                                                                                          "b":  -1.2,
+                                                                                          "min":  -3.0,
+                                                                                          "max":  10.0
+                                                                                      },
+                                                                          "DEFAULT":  {
+                                                                                          "a":  6.0,
+                                                                                          "b":  -2.4,
+                                                                                          "min":  -3.0,
+                                                                                          "max":  10.0
+                                                                                      }
+                                                                      }
+                                                      },
+                                   "first_blood":  {
+                                                       "label":  "First Blood",
+                                                       "kind":  "binary",
+                                                       "true":  5.0,
+                                                       "false":  0.0
+                                                   }
+                               },
+                    "vs_opponent":  {
+                                        "xp_diff":  {
+                                                        "label":  "XP Diff",
+                                                        "kind":  "clamp_linear",
+                                                        "a":  0.0002,
+                                                        "b":  0.0,
+                                                        "min":  -8.0,
+                                                        "max":  8.0
+                                                    },
+                                        "gold_diff":  {
+                                                          "label":  "Gold Diff",
+                                                          "kind":  "clamp_linear",
+                                                          "a":  0.00055,
+                                                          "b":  0.0,
+                                                          "min":  -15.0,
+                                                          "max":  15.0
+                                                      },
+                                        "vision_diff":  {
+                                                            "label":  "Vision Diff",
+                                                            "kind":  "clamp_linear",
+                                                            "a":  7.0,
+                                                            "b":  0.0,
+                                                            "min":  -7.0,
+                                                            "max":  7.0
+                                                        },
+                                        "max_cs_diff":  {
+                                                            "label":  "Max CS Diff",
+                                                            "kind":  "clamp_linear",
+                                                            "a":  0.08,
+                                                            "b":  0.0,
+                                                            "min":  -3.0,
+                                                            "max":  12.0
+                                                        }
+                                    },
+                    "objectives":  {
+                                       "rift_herald":  {
+                                                           "label":  "Rift Herald",
+                                                           "kind":  "linear",
+                                                           "a":  3.0,
+                                                           "b":  0.0,
+                                                           "min":  0.0,
+                                                           "max":  6.0
+                                                       },
+                                       "dragons":  {
+                                                       "label":  "Dragons",
+                                                       "kind":  "linear",
+                                                       "a":  2.0,
+                                                       "b":  0.0,
+                                                       "min":  0.0,
+                                                       "max":  10.0
+                                                   },
+                                       "barons":  {
+                                                      "label":  "Barons",
+                                                      "kind":  "linear",
+                                                      "a":  2.0,
+                                                      "b":  0.0,
+                                                      "min":  0.0,
+                                                      "max":  8.0
+                                                  },
+                                       "grubs":  {
+                                                     "label":  "Grubs",
+                                                     "kind":  "linear",
+                                                     "a":  0.5,
+                                                     "b":  0.0,
+                                                     "min":  0.0,
+                                                     "max":  3.0
+                                                 },
+                                       "dmg_to_objectives":  {
+                                                                 "label":  "Damage to Objectives",
+                                                                 "kind":  "clamp_linear",
+                                                                 "a":  0.00012,
+                                                                 "b":  0.0,
+                                                                 "min":  0.0,
+                                                                 "max":  4.0
+                                                             },
+                                       "epic_steals":  {
+                                                           "label":  "Epic Monster Steals",
+                                                           "kind":  "linear",
+                                                           "a":  6.0,
+                                                           "b":  0.0,
+                                                           "min":  0.0,
+                                                           "max":  12.0
+                                                       }
+                                   },
+                    "team":  {
+                                 "kill_participation":  {
+                                                            "label":  "Kill Participation",
+                                                            "kind":  "clamp_linear",
+                                                            "a":  0.13,
+                                                            "b":  -3.5,
+                                                            "min":  -3.5,
+                                                            "max":  6.5
+                                                        },
+                                 "damage_taken_pct":  {
+                                                          "label":  "Damage Taken %",
+                                                          "kind":  "role_clamp_linear",
+                                                          "by_role":  {
+                                                                          "TOP":  {
+                                                                                      "a":  0.07,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  4.0
+                                                                                  },
+                                                                          "MID":  {
+                                                                                      "a":  0.03,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  4.0
+                                                                                  },
+                                                                          "ADC":  {
+                                                                                      "a":  0.03,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  4.0
+                                                                                  },
+                                                                          "JUNGLE":  {
+                                                                                         "a":  0.05,
+                                                                                         "b":  0.0,
+                                                                                         "min":  0.0,
+                                                                                         "max":  4.0
+                                                                                     },
+                                                                          "SUPPORT":  {
+                                                                                          "a":  0.03,
+                                                                                          "b":  0.0,
+                                                                                          "min":  0.0,
+                                                                                          "max":  4.0
+                                                                                      },
+                                                                          "DEFAULT":  {
+                                                                                          "a":  0.05,
+                                                                                          "b":  0.0,
+                                                                                          "min":  0.0,
+                                                                                          "max":  4.0
+                                                                                      }
+                                                                      }
+                                                      },
+                                 "damage_dealt_pct":  {
+                                                          "label":  "Damage Dealt %",
+                                                          "kind":  "role_clamp_linear",
+                                                          "by_role":  {
+                                                                          "TOP":  {
+                                                                                      "a":  0.09,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  5.0
+                                                                                  },
+                                                                          "MID":  {
+                                                                                      "a":  0.095,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  5.0
+                                                                                  },
+                                                                          "ADC":  {
+                                                                                      "a":  0.10,
+                                                                                      "b":  0.0,
+                                                                                      "min":  0.0,
+                                                                                      "max":  5.0
+                                                                                  },
+                                                                          "JUNGLE":  {
+                                                                                         "a":  0.08,
+                                                                                         "b":  0.0,
+                                                                                         "min":  0.0,
+                                                                                         "max":  5.0
+                                                                                     },
+                                                                          "SUPPORT":  {
+                                                                                          "a":  0.055,
+                                                                                          "b":  0.0,
+                                                                                          "min":  0.0,
+                                                                                          "max":  5.0
+                                                                                      },
+                                                                          "DEFAULT":  {
+                                                                                          "a":  0.09,
+                                                                                          "b":  0.0,
+                                                                                          "min":  0.0,
+                                                                                          "max":  5.0
+                                                                                      }
+                                                                      }
+                                                      }
+                             },
+                    "role":  {
+                                 "TOP":  {
+                                             "solo_kills":  {
+                                                                "label":  "Solo Kills",
+                                                                "kind":  "linear",
+                                                                "a":  0.75,
+                                                                "b":  0.0,
+                                                                "min":  0.0,
+                                                                "max":  10.0
+                                                            },
+                                             "turret_plates":  {
+                                                                   "label":  "Turret Plates",
+                                                                   "kind":  "clamp_linear",
+                                                                   "a":  1.7,
+                                                                   "b":  0.0,
+                                                                   "min":  0.0,
+                                                                   "max":  12.0
+                                                               },
+                                             "cs_at_10":  {
+                                                              "label":  "CS @10",
+                                                              "kind":  "clamp_linear",
+                                                              "a":  0.35,
+                                                              "b":  -18.9,
+                                                              "min":  -6.0,
+                                                              "max":  10.0
+                                                          },
+                                             "turrets":  {
+                                                             "label":  "Turrets",
+                                                             "kind":  "clamp_linear",
+                                                             "a":  0.85,
+                                                             "b":  0.0,
+                                                             "min":  0.0,
+                                                             "max":  6.0
+                                                         }
+                                         },
+                                 "MID":  {
+                                             "solo_kills":  {
+                                                                "label":  "Solo Kills",
+                                                                "kind":  "linear",
+                                                                "a":  0.8,
+                                                                "b":  0.0,
+                                                                "min":  0.0,
+                                                                "max":  10.0
+                                                            },
+                                             "turret_plates":  {
+                                                                   "label":  "Turret Plates",
+                                                                   "kind":  "clamp_linear",
+                                                                   "a":  1.7,
+                                                                   "b":  0.0,
+                                                                   "min":  0.0,
+                                                                   "max":  12.0
+                                                               },
+                                             "cs_at_10":  {
+                                                              "label":  "CS @10",
+                                                              "kind":  "clamp_linear",
+                                                              "a":  0.34,
+                                                              "b":  -18.0,
+                                                              "min":  -6.0,
+                                                              "max":  10.0
+                                                          },
+                                             "turrets":  {
+                                                             "label":  "Turrets",
+                                                             "kind":  "clamp_linear",
+                                                             "a":  0.8,
+                                                             "b":  0.0,
+                                                             "min":  0.0,
+                                                             "max":  6.0
+                                                         }
+                                         },
+                                 "ADC":  {
+                                             "solo_kills":  {
+                                                                "label":  "Solo Kills",
+                                                                "kind":  "linear",
+                                                                "a":  1.5,
+                                                                "b":  0.0,
+                                                                "min":  0.0,
+                                                                "max":  12.0
+                                                            },
+                                             "turret_plates":  {
+                                                                   "label":  "Turret Plates",
+                                                                   "kind":  "cap_threshold",
+                                                                   "threshold":  3.0,
+                                                                   "max_points":  10.5
+                                                               },
+                                             "cs_at_10":  {
+                                                              "label":  "CS @10",
+                                                              "kind":  "clamp_linear",
+                                                              "a":  0.367,
+                                                              "b":  -18.7,
+                                                              "min":  -6.0,
+                                                              "max":  10.0
+                                                          },
+                                             "turrets":  {
+                                                             "label":  "Turrets",
+                                                             "kind":  "clamp_linear",
+                                                             "a":  0.77,
+                                                             "b":  0.0,
+                                                             "min":  0.0,
+                                                             "max":  6.0
+                                                         }
+                                         },
+                                 "JUNGLE":  {
+                                                "initial_crabs":  {
+                                                                      "label":  "Initial Crabs",
+                                                                      "kind":  "clamp_linear",
+                                                                      "a":  1.5,
+                                                                      "b":  0.0,
+                                                                      "min":  0.0,
+                                                                      "max":  3.0
+                                                                  },
+                                                "scuttle_crabs":  {
+                                                                      "label":  "Scuttle Crabs",
+                                                                      "kind":  "linear",
+                                                                      "a":  0.5,
+                                                                      "b":  0.0,
+                                                                      "min":  0.0,
+                                                                      "max":  4.0
+                                                                  },
+                                                "jungle_cs_at_10":  {
+                                                                        "label":  "Jungle CS @10",
+                                                                        "kind":  "clamp_linear",
+                                                                        "a":  0.12,
+                                                                        "b":  0.0,
+                                                                        "min":  0.0,
+                                                                        "max":  10.0
+                                                                    },
+                                                "pick_kill_with_ally":  {
+                                                                            "label":  "Pick Kill with Ally",
+                                                                            "kind":  "clamp_linear",
+                                                                            "a":  0.42,
+                                                                            "b":  0.0,
+                                                                            "min":  0.0,
+                                                                            "max":  6.0
+                                                                        }
+                                            },
+                                 "SUPPORT":  {
+                                                 "control_wards":  {
+                                                                       "label":  "Control Wards Placed",
+                                                                       "kind":  "cap_threshold",
+                                                                       "threshold":  4.0,
+                                                                       "max_points":  3.0
+                                                                   },
+                                                 "wards_killed":  {
+                                                                      "label":  "Wards Killed",
+                                                                      "kind":  "cap_threshold",
+                                                                      "threshold":  8.0,
+                                                                      "max_points":  4.0
+                                                                  },
+                                                 "wards_placed":  {
+                                                                      "label":  "Wards Placed",
+                                                                      "kind":  "cap_threshold",
+                                                                      "threshold":  18.0,
+                                                                      "max_points":  4.0
+                                                                  },
+                                                 "pick_kill_with_ally":  {
+                                                                             "label":  "Pick Kill with Ally",
+                                                                             "kind":  "cap_threshold",
+                                                                             "threshold":  20.0,
+                                                                             "max_points":  4.0
+                                                                         },
+                                                 "save_ally":  {
+                                                                   "label":  "Save Ally from Death",
+                                                                   "kind":  "linear",
+                                                                   "a":  1.0,
+                                                                   "b":  0.0,
+                                                                   "min":  0.0,
+                                                                   "max":  2.0
+                                                               }
+                                             }
+                             }
+                },
+    "calibration":  {
+                        "enabled":  true,
+                        "role_duel":  {
+                                          "role_score_weight":  0.45,
+                                          "vs_opponent_weight":  0.55,
+                                          "max_abs_bonus":  7.5
+                                      },
+                        "lobby_difficulty":  {
+                                                 "team_avg_diff_scale":  14,
+                                                 "max_abs_bonus":  6
+                                             },
+                        "game_rebase":  {
+                                            "player_vs_team_scale":  16,
+                                            "max_abs_bonus":  6.5,
+                                            "win_bonus":  0.8,
+                                            "loss_bonus":  -0.3
+                                        },
+                        "final_stretch":  {
+                                              "enabled":  true,
+                                              "slope":  0.92
+                                          }
+                    }
+}
+

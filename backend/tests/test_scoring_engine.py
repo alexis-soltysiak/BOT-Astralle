@@ -50,6 +50,7 @@ def test_vs_opponent_metrics_are_neutral_when_opponent_missing() -> None:
         opponents={},
         team_sums={100: {"kills": 10.0, "dmg_dealt": 50000.0, "dmg_taken": 30000.0}},
         obj_by_team={100: {}},
+        team_win_by_id={100: True, 200: False},
         info=_base_info(),
     )
 
@@ -78,6 +79,7 @@ def test_vs_opponent_metric_payload_keeps_signed_value() -> None:
         opponents={"player-1": opponent},
         team_sums={100: {"kills": 10.0, "dmg_dealt": 50000.0, "dmg_taken": 30000.0}},
         obj_by_team={100: {}},
+        team_win_by_id={100: True, 200: False},
         info=_base_info(),
     )
 

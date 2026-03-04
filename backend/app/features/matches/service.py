@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
+import uuid
 
 import httpx
 import structlog
@@ -688,6 +689,33 @@ class MatchesService:
             ],
             scores=score_payloads,
         )
+
+    async def queue_republish(self, session: AsyncSession, riot_match_id: str) -> dict | None:
+        match_row = await self._repo.get_by_riot_id(session, riot_match_id)
+        if match_row is None:
+            return None
+
+        settings = get_settings()
+        dedupe_key = f"match_finished:manual:{match_row.riot_match_id}:{uuid.uuid4().hex}"
+        payload = {
+            "riot_match_id": match_row.riot_match_id,
+            "region": match_row.region,
+            "manual_republish": True,
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+        }
+        created = await self._publications_repo.try_create_event(
+            session=session,
+            event_type="match_finished",
+            dedupe_key=dedupe_key,
+            payload=payload,
+            max_attempts=settings.publication_max_attempts,
+        )
+        await session.commit()
+        return {
+            "riot_match_id": match_row.riot_match_id,
+            "queued": created,
+            "dedupe_key": dedupe_key,
+        }
 
     async def get_recent_player_analysis(
         self,

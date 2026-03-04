@@ -64,6 +64,13 @@ CATEGORY_META = [
     ("team", "Team"),
     ("role", "Role"),
 ]
+COMPACT_CATEGORY_META = [
+    ("global", "\U0001F310"),
+    ("vs_opponent", "\U0001F19A"),
+    ("objectives", "\U0001F3AF"),
+    ("team", "\U0001F465"),
+    ("role", "\U0001F3AD"),
+]
 UNSCORED_MODE_TOKENS = ("arena", "cherry")
 BLANK = "\u200b"
 QUEUE_LABELS = {
@@ -422,6 +429,30 @@ def _final_score_line(participant: dict, score_by_puuid: dict[str, dict]) -> str
     return f"\U0001F3C6 Classement final: **{_rank_icon(final_rank)}/10**"
 
 
+def _compact_rank_summary_line(participant: dict, score_by_puuid: dict[str, dict]) -> str | None:
+    puuid = str(participant.get("puuid") or "")
+    score_payload = score_by_puuid.get(puuid) or {}
+    if not puuid or not isinstance(score_payload, dict) or not score_payload:
+        return None
+
+    final_rank = _final_score_rank(participant, score_by_puuid)
+    if final_rank is None:
+        return None
+
+    parts: list[str] = [f"\U0001F3C6{final_rank}/10"]
+    cats = score_payload.get("categories")
+    if isinstance(cats, dict):
+        for key, icon in COMPACT_CATEGORY_META:
+            cat = cats.get(key)
+            if not isinstance(cat, dict):
+                continue
+            rank = _safe_int(cat.get("rank"))
+            if rank is None:
+                continue
+            parts.append(f"{icon}{_rank_icon(rank)}")
+    return " \u2022 ".join(parts)
+
+
 def _categories_summary(score_payload: dict, resolver: EmojiResolver | None = None) -> str:
     cats = score_payload.get("categories")
     if not isinstance(cats, dict):
@@ -736,10 +767,14 @@ def build_match_finished_embed(
 
         if not is_unscored_mode and isinstance(score_payload, dict) and score_payload:
             notes_lines: list[str] = []
-            final_score_line = _final_score_line(participant, score_by_puuid)
-            if final_score_line:
-                notes_lines.append(final_score_line)
-            notes_lines.append(_categories_summary(score_payload, resolver))
+            compact_line = _compact_rank_summary_line(participant, score_by_puuid)
+            if compact_line:
+                notes_lines.append(compact_line)
+            else:
+                final_score_line = _final_score_line(participant, score_by_puuid)
+                if final_score_line:
+                    notes_lines.append(final_score_line)
+                notes_lines.append(_categories_summary(score_payload, resolver))
             embed.add_field(name="Notes :", value="\n".join(notes_lines), inline=False)
 
         file: discord.File | None = None
@@ -845,9 +880,13 @@ def build_match_finished_embed(
             player_embed.add_field(name=BLANK, value="\n".join(loadout_lines), inline=False)
 
         if not is_unscored_mode and isinstance(score_payload, dict) and score_payload:
-            final_score_line = _final_score_line(participant, score_by_puuid)
-            if final_score_line:
-                player_embed.add_field(name="Classement", value=final_score_line, inline=False)
+            compact_line = _compact_rank_summary_line(participant, score_by_puuid)
+            if compact_line:
+                player_embed.add_field(name="Classement", value=compact_line, inline=False)
+            else:
+                final_score_line = _final_score_line(participant, score_by_puuid)
+                if final_score_line:
+                    player_embed.add_field(name="Classement", value=final_score_line, inline=False)
 
         if match_datetime:
             player_embed.set_footer(text=f"Game date: {match_datetime}")
