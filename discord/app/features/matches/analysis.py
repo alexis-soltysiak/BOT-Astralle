@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import discord
 import httpx
@@ -9,17 +10,22 @@ import structlog
 from app.features.matches.embeds import build_match_analysis_context
 
 
-def _analysis_targets(final_score: object) -> dict[str, int]:
-    score = float(final_score or 0.0)
-    if score >= 90:
-        return {"strengths": 4, "improvements": 1, "next_steps": 2}
-    if score >= 75:
-        return {"strengths": 3, "improvements": 2, "next_steps": 2}
-    if score >= 55:
-        return {"strengths": 2, "improvements": 2, "next_steps": 2}
-    if score >= 40:
-        return {"strengths": 2, "improvements": 3, "next_steps": 2}
-    return {"strengths": 1, "improvements": 4, "next_steps": 2}
+_ANALYSIS_LIMITS = {"strengths": 3, "improvements": 3, "next_steps": 2}
+_TAG_PATTERN = re.compile(r"^\s*\[(global|vs_opponent|objectives|team|role)\]\s*(.+)$", re.IGNORECASE)
+_TAG_LABELS = {
+    "global": "Global",
+    "vs_opponent": "Vs Opponent",
+    "objectives": "Objectives",
+    "team": "Team",
+    "role": "Role",
+}
+_TAG_EMOJIS = {
+    "global": "🌐",
+    "vs_opponent": "⚔️",
+    "objectives": "🎯",
+    "team": "👥",
+    "role": "🎮",
+}
 
 
 def _role_guidance(role: object) -> str:
@@ -37,6 +43,79 @@ def _role_guidance(role: object) -> str:
     return "Analyse surtout l'impact de role, le tempo et l'execution macro."
 
 
+def _category_rank_map(context: dict | None) -> dict[str, int]:
+    if not isinstance(context, dict):
+        return {}
+    details = context.get("category_details")
+    if not isinstance(details, list):
+        return {}
+    out: dict[str, int] = {}
+    for row in details:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip().lower()
+        rank = row.get("rank")
+        if key and isinstance(rank, int):
+            out[key] = rank
+    return out
+
+
+def _parse_tagged_line(text: str) -> tuple[str, str] | None:
+    match = _TAG_PATTERN.match(text)
+    if not match:
+        return None
+    key = str(match.group(1)).strip().lower()
+    body = " ".join(str(match.group(2) or "").split())
+    if not body:
+        return None
+    return key, body
+
+
+def _render_advice_line(text: object) -> str | None:
+    line = _normalize_line(text, limit=220)
+    if not line:
+        return None
+    parsed = _parse_tagged_line(line)
+    if parsed is None:
+        return line
+    key, body = parsed
+    label = _TAG_LABELS.get(key, key)
+    emoji = _TAG_EMOJIS.get(key, "•")
+    return f"{emoji} **{label}** {body}"
+
+
+def _normalize_tagged_list(
+    items: object,
+    *,
+    context: dict | None,
+    max_items: int,
+    mode: str,
+) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    ranks = _category_rank_map(context)
+    out: list[str] = []
+    for item in items:
+        line = _normalize_line(item, limit=220)
+        if not line:
+            continue
+        parsed = _parse_tagged_line(line)
+        if parsed is None:
+            continue
+        key, body = parsed
+        rank = ranks.get(key)
+        if rank is None:
+            continue
+        if mode == "strengths" and rank > 4:
+            continue
+        if mode in {"improvements", "next_steps"} and rank < 7:
+            continue
+        out.append(f"[{key}] {body}")
+        if len(out) >= max_items:
+            break
+    return out
+
+
 def _build_prompt(context: dict) -> str:
     category_lines: list[str] = []
     for category in context.get("category_details") or []:
@@ -50,24 +129,34 @@ def _build_prompt(context: dict) -> str:
             f"- {category.get('label')}: rank={category.get('rank')}/10 total={category.get('total_points')} | {metrics_text}"
         )
 
-    targets = _analysis_targets(context.get("final_score"))
+    ranks = _category_rank_map(context)
+    strong = [key for key, rank in ranks.items() if rank <= 4]
+    weak = [key for key, rank in ranks.items() if rank >= 7]
+    strong_text = ", ".join(strong) if strong else "none"
+    weak_text = ", ".join(weak) if weak else "none"
     lines = [
-        "Analyse cette performance individuelle League of Legends comme un analyste coach.",
-        "Donne un retour tres concret, specifique au role et base uniquement sur les donnees fournies.",
+        "Analyse cette performance individuelle League of Legends comme un coach pro tres factuel.",
+        "Donne uniquement des constats soutenus par les donnees fournies.",
+        "Interdiction d'inventer, d'extrapoler ou de generaliser sans preuve.",
         "Reponds en francais sous forme d'un JSON strict, sans markdown, sans texte autour.",
-        "Utilise des emojis dans les textes retournes.",
         "Schema JSON obligatoire:",
         '{"headline":"string","summary":"string","strengths":["string"],"improvements":["string"],"next_steps":["string"],"key_focus":"string","confidence":"low|medium|high"}',
         "Contraintes:",
-        '- "headline": 4 a 7 mots max',
-        '- "summary": 1 phrase, 18 mots max',
-        f'- "strengths": exactement {targets["strengths"]} points, 8 mots max par point',
-        f'- "improvements": exactement {targets["improvements"]} points, 8 mots max par point',
-        f'- "next_steps": exactement {targets["next_steps"]} actions, 8 mots max par point',
-        '- "key_focus": 5 mots max',
+        '- "headline": 4 a 8 mots max',
+        '- "summary": 1 phrase, 22 mots max',
+        '- "strengths": 0 a 3 points',
+        '- "improvements": 0 a 3 points',
+        '- "next_steps": 0 a 2 actions',
+        '- "key_focus": 3 a 8 mots',
         '- "confidence": low, medium ou high',
-        "Sois tres concis. Pas de phrase longue.",
-        "Le ratio positif/negatif doit suivre le score final: gros score = plus de points positifs, faible score = plus de points a corriger.",
+        "Chaque item de strengths/improvements/next_steps doit commencer par un tag parmi [global], [vs_opponent], [objectives], [team], [role].",
+        "N'ajoute pas de point si la preuve n'est pas suffisante.",
+        "Si aucun point pertinent, renvoie une liste vide [].",
+        "Regle de certitude:",
+        f"- categories fortes (rank<=4): {strong_text}",
+        f"- categories faibles (rank>=7): {weak_text}",
+        "- strengths: uniquement categories fortes.",
+        "- improvements/next_steps: uniquement categories faibles.",
         _role_guidance(context.get("role")),
         "",
         f"Joueur: {context.get('player_name')}",
@@ -114,7 +203,7 @@ def _normalize_line(text: object, *, limit: int = 120) -> str | None:
     if not value:
         return None
     if len(value) > limit:
-        return value[: limit - 3].rstrip() + "..."
+        return value[:limit].rstrip()
     return value
 
 
@@ -236,12 +325,26 @@ def _normalize_analysis_payload(raw: str, context: dict | None = None) -> dict |
     if not isinstance(data, dict):
         return None
 
-    targets = _analysis_targets(None if context is None else context.get("final_score"))
     headline = _normalize_line(data.get("headline"), limit=64)
     summary = _normalize_line(data.get("summary"), limit=140)
-    strengths = _normalize_list(data.get("strengths"), limit=targets["strengths"])
-    improvements = _normalize_list(data.get("improvements"), limit=targets["improvements"])
-    next_steps = _normalize_list(data.get("next_steps"), limit=targets["next_steps"])
+    strengths = _normalize_tagged_list(
+        data.get("strengths"),
+        context=context,
+        max_items=_ANALYSIS_LIMITS["strengths"],
+        mode="strengths",
+    )
+    improvements = _normalize_tagged_list(
+        data.get("improvements"),
+        context=context,
+        max_items=_ANALYSIS_LIMITS["improvements"],
+        mode="improvements",
+    )
+    next_steps = _normalize_tagged_list(
+        data.get("next_steps"),
+        context=context,
+        max_items=_ANALYSIS_LIMITS["next_steps"],
+        mode="next_steps",
+    )
     key_focus = _normalize_line(data.get("key_focus"), limit=48)
 
     if not any([headline, summary, strengths, improvements, next_steps, key_focus]):
@@ -284,21 +387,17 @@ def build_match_advice_embed(
         else:
             embed.set_author(name=author_name)
 
-    summary = str(analysis_payload.get("summary") or "").strip()
-    if summary:
-        embed.add_field(name="Lecture", value=summary, inline=False)
-
     strengths = analysis_payload.get("strengths") or []
     if strengths:
-        embed.add_field(name="Bien", value="\n".join(f"• {item}" for item in strengths), inline=False)
+        rendered = [line for line in (_render_advice_line(item) for item in strengths) if line]
+        if rendered:
+            embed.add_field(name="✅ Bien", value="\n".join(f"• {item}" for item in rendered), inline=False)
 
     improvements = analysis_payload.get("improvements") or []
     if improvements:
-        embed.add_field(name="A ameliorer", value="\n".join(f"• {item}" for item in improvements), inline=False)
-
-    next_steps = analysis_payload.get("next_steps") or []
-    if next_steps:
-        embed.add_field(name="Plan pour la prochaine game", value="\n".join(f"• {item}" for item in next_steps), inline=False)
+        rendered = [line for line in (_render_advice_line(item) for item in improvements) if line]
+        if rendered:
+            embed.add_field(name="🛠️ A ameliorer", value="\n".join(f"• {item}" for item in rendered), inline=False)
 
     key_focus = str(analysis_payload.get("key_focus") or "").strip()
     footer = key_focus if key_focus else confidence_label
@@ -347,23 +446,27 @@ def build_recent_form_advice_embed(
 
     strengths = analysis_payload.get("strengths") or []
     if strengths:
-        embed.add_field(name="Points forts", value="\n".join(f"• {item}" for item in strengths), inline=False)
+        rendered = [line for line in (_render_advice_line(item) for item in strengths) if line]
+        if rendered:
+            embed.add_field(name="Points forts", value="\n".join(f"- {item}" for item in rendered), inline=False)
 
     improvements = analysis_payload.get("improvements") or []
     if improvements:
-        embed.add_field(name="A corriger", value="\n".join(f"• {item}" for item in improvements), inline=False)
+        rendered = [line for line in (_render_advice_line(item) for item in improvements) if line]
+        if rendered:
+            embed.add_field(name="A corriger", value="\n".join(f"- {item}" for item in rendered), inline=False)
 
     next_steps = analysis_payload.get("next_steps") or []
     if next_steps:
-        embed.add_field(name="Plan d'action", value="\n".join(f"• {item}" for item in next_steps), inline=False)
+        rendered = [line for line in (_render_advice_line(item) for item in next_steps) if line]
+        if rendered:
+            embed.add_field(name="Plan d'action", value="\n".join(f"- {item}" for item in rendered), inline=False)
 
     key_focus = str(analysis_payload.get("key_focus") or "").strip()
     confidence = str(analysis_payload.get("confidence") or "medium")
     footer = f"Focus: {key_focus}" if key_focus else "Focus: Execution reguliere"
     embed.set_footer(text=f"{footer} | confiance: {confidence}")
     return embed
-
-
 class MatchAnalysisClient:
     def __init__(
         self,

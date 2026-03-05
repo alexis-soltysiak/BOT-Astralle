@@ -268,15 +268,23 @@ def _compute_one_sync(
 
     opp = opponents.get(puuid) or {}
     if opp:
-        xp_diff = _safe_num(p.get("champExperience")) - _safe_num(opp.get("champExperience"))
-        gold_diff = _safe_num(p.get("goldEarned")) - _safe_num(opp.get("goldEarned"))
+        # Riot "vs opponent" values shown in post-game are max lane advantages.
+        # Fall back to end-of-game deltas when challenge fields are absent.
+        xp_diff = _safe_num(
+            ch.get("maxXpAdvantageOnLaneOpponent"),
+            _safe_num(p.get("champExperience")) - _safe_num(opp.get("champExperience")),
+        )
+        gold_diff = _safe_num(
+            ch.get("maxGoldAdvantageOnLaneOpponent"),
+            _safe_num(p.get("goldEarned")) - _safe_num(opp.get("goldEarned")),
+        )
         vision_diff = _safe_num(p.get("visionScore")) - _safe_num(opp.get("visionScore"))
         max_cs_diff = _safe_num(ch.get("maxCsAdvantageOnLaneOpponent"))
     else:
-        xp_diff = 0.0
-        gold_diff = 0.0
+        xp_diff = _safe_num(ch.get("maxXpAdvantageOnLaneOpponent"))
+        gold_diff = _safe_num(ch.get("maxGoldAdvantageOnLaneOpponent"))
         vision_diff = 0.0
-        max_cs_diff = 0.0
+        max_cs_diff = _safe_num(ch.get("maxCsAdvantageOnLaneOpponent"))
 
     t_kills = _safe_num(team_sums.get(team_id, {}).get("kills"), 0.0)
     kp = 0.0 if t_kills <= 0 else 100.0 * (kills + assists) / t_kills

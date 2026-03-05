@@ -118,23 +118,26 @@ def test_prompt_and_normalization() -> None:
         "notes_summary": "Global: 1/10",
         "spells": [4, 14],
         "items": [3157],
-        "category_details": [{"label": "Global", "rank": 1, "total_points": 18.2, "metrics": []}],
+        "category_details": [
+            {"key": "global", "label": "Global", "rank": 1, "total_points": 18.2, "metrics": []},
+            {"key": "objectives", "label": "Objectives", "rank": 8, "total_points": 2.0, "metrics": []},
+        ],
     }
     prompt = _build_prompt(context)
 
     assert "Joueur: Alex" in prompt
     assert "Schema JSON obligatoire:" in prompt
     assert "Score final: 88.3/100" in prompt
-    assert "exactement 3 points" in prompt
+    assert '"strengths": 0 a 3 points' in prompt
     assert "priorite lane" in prompt
     normalized = _normalize_analysis_payload(
         """
         {
           "headline": "Bonne game de tempo",
           "summary": "Tu as bien converti ton avance.",
-          "strengths": ["Bons timings de trade", "Bonne pression mid", "Bons roams", "Extra"],
-          "improvements": ["Trop de greed avant reset", "Mieux timer recalls", "Extra"],
-          "next_steps": ["Push puis ward river", "Reset sur spike item", "Punir flash mid"],
+          "strengths": ["[global] Bons timings de trade", "[objectives] Bonne prise d'objectifs", "Sans tag"],
+          "improvements": ["[objectives] Setup drake trop tardif", "[global] Mauvais spacing"],
+          "next_steps": ["[objectives] Push mid avant drake", "[team] Synchroniser flank"],
           "key_focus": "Stabiliser tes resets",
           "confidence": "high"
         }
@@ -144,9 +147,9 @@ def test_prompt_and_normalization() -> None:
     assert normalized is not None
     assert normalized["headline"] == "Bonne game de tempo"
     assert normalized["confidence"] == "high"
-    assert normalized["strengths"][0] == "Bons timings de trade"
-    assert len(normalized["strengths"]) == 3
-    assert len(normalized["improvements"]) == 2
+    assert normalized["strengths"] == ["[global] Bons timings de trade"]
+    assert normalized["improvements"] == ["[objectives] Setup drake trop tardif"]
+    assert normalized["next_steps"] == ["[objectives] Push mid avant drake"]
 
 
 def test_recent_form_prompt_and_normalization() -> None:

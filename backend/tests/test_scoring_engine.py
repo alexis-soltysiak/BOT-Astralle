@@ -73,6 +73,38 @@ def test_vs_opponent_metric_payload_keeps_signed_value() -> None:
         "champExperience": 11000,
     }
 
+    participant["challenges"]["maxXpAdvantageOnLaneOpponent"] = 14676
+    participant["challenges"]["maxGoldAdvantageOnLaneOpponent"] = 13457
+
+    result = _compute_one_sync(
+        params,
+        participant,
+        opponents={"player-1": opponent},
+        team_sums={100: {"kills": 10.0, "dmg_dealt": 50000.0, "dmg_taken": 30000.0}},
+        obj_by_team={100: {}},
+        team_win_by_id={100: True, 200: False},
+        info=_base_info(),
+    )
+
+    metrics = {metric["key"]: metric for metric in result["categories"]["vs_opponent"]["metrics"]}
+    assert metrics["xp_diff"]["value"] == 14676.0
+    assert metrics["gold_diff"]["value"] == 13457.0
+    assert metrics["vision_diff"]["value"] == -5.0
+    assert metrics["max_cs_diff"]["value"] == -12.0
+
+
+def test_vs_opponent_metric_falls_back_to_endgame_delta_when_max_lane_fields_missing() -> None:
+    params = load_params()
+    participant = _base_participant()
+    opponent = {
+        "puuid": "player-2",
+        "teamId": 200,
+        "teamPosition": "TOP",
+        "goldEarned": 9500,
+        "visionScore": 25,
+        "champExperience": 11000,
+    }
+
     result = _compute_one_sync(
         params,
         participant,
@@ -86,5 +118,3 @@ def test_vs_opponent_metric_payload_keeps_signed_value() -> None:
     metrics = {metric["key"]: metric for metric in result["categories"]["vs_opponent"]["metrics"]}
     assert metrics["xp_diff"]["value"] == -1000.0
     assert metrics["gold_diff"]["value"] == -500.0
-    assert metrics["vision_diff"]["value"] == -5.0
-    assert metrics["max_cs_diff"]["value"] == -12.0

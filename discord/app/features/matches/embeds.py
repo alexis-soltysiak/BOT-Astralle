@@ -79,6 +79,7 @@ QUEUE_LABELS = {
     450: "ARAM",
     1700: "Arena",
 }
+ROLE_ORDER = ("TOP", "JUNGLE", "MID", "ADC", "SUPPORT")
 RANK_ICON = {
     1: "1\uFE0F\u20E3",
     2: "2\uFE0F\u20E3",
@@ -576,6 +577,95 @@ def _tracked_summary_lines(
     return lines
 
 
+def _score_int2_for_participant(participant: dict, score_by_puuid: dict[str, dict]) -> str:
+    puuid = str(participant.get("puuid") or "")
+    payload = score_by_puuid.get(puuid) or {}
+    if not isinstance(payload, dict):
+        return "--"
+    raw_score = payload.get("final_score")
+    if raw_score is None:
+        return "--"
+    score = int(round(_safe_float(raw_score)))
+    score = max(0, min(99, score))
+    return f"{score:02d}"
+
+
+def _duel_rank_and_score_label(participant: dict, score_by_puuid: dict[str, dict]) -> str:
+    final_rank = _final_score_rank(participant, score_by_puuid)
+    rank_label = _rank_icon(final_rank) if final_rank is not None else "?"
+    return f"\U0001F3C6{rank_label} {_score_int2_for_participant(participant, score_by_puuid)}"
+
+
+def _champ_icon_for_participant(participant: dict, resolver: EmojiResolver | None = None) -> str:
+    if resolver is None:
+        return ""
+    champ = str(participant.get("champion_name") or "?")
+    return resolver.champ_from_filename(champ) or ""
+
+
+def _duel_line(
+    participant: dict | None,
+    score_by_puuid: dict[str, dict],
+    participants: list[dict],
+    tracked_by_puuid: dict[str, dict],
+    resolver: EmojiResolver | None = None,
+) -> str:
+    if participant is None:
+        return "\U0001F3C6? -- | - | ?"
+    rank_and_score = _duel_rank_and_score_label(participant, score_by_puuid)
+    badge = _score_badge(participant, score_by_puuid, participants, resolver)
+    champ = _champ_icon_for_participant(participant, resolver)
+    raw_name = _name_for(participant, tracked_by_puuid)
+    base_name = str(raw_name or "Unknown").split("#", 1)[0].strip()
+    name = base_name[:6] if base_name else "Unk"
+    champ_part = champ if champ else str(participant.get("champion_name") or "?")
+    return " ".join(part for part in [badge, f"{rank_and_score} | {champ_part} | {name}"] if part)
+
+
+def _face_to_face_embed(
+    *,
+    summary: dict,
+    participants: list[dict],
+    score_by_puuid: dict[str, dict],
+    tracked_by_puuid: dict[str, dict],
+    player_name: str,
+    author_icon_url: str | None = None,
+    embed_color: discord.Color | None = None,
+    resolver: EmojiResolver | None = None,
+) -> discord.Embed:
+    by_team_role: dict[tuple[int, str], dict] = {}
+    for participant in participants:
+        team_id = _safe_int(participant.get("team_id"))
+        if team_id not in {100, 200}:
+            continue
+        puuid = str(participant.get("puuid") or "")
+        role = _role_for(participant, score_by_puuid.get(puuid) or {})
+        if role not in ROLE_ORDER:
+            continue
+        by_team_role[(team_id, role)] = participant
+
+    blue_rows: list[str] = []
+    red_rows: list[str] = []
+    for role in ROLE_ORDER:
+        blue_rows.append(_duel_line(by_team_role.get((100, role)), score_by_puuid, participants, tracked_by_puuid, resolver))
+        red_rows.append(_duel_line(by_team_role.get((200, role)), score_by_puuid, participants, tracked_by_puuid, resolver))
+
+    queue_id = _safe_int(summary.get("queue_id"))
+    ranked_queue_type = summary.get("ranked_queue_type")
+    mode = _game_type_label(summary.get("game_mode"), queue_id, ranked_queue_type)
+    embed = discord.Embed(
+        title=f"Face a face - {mode}",
+        color=embed_color or discord.Color.blurple(),
+    )
+    if author_icon_url:
+        embed.set_author(name=player_name, icon_url=author_icon_url)
+    else:
+        embed.set_author(name=player_name)
+    embed.add_field(name="Team Blue", value="\n".join(blue_rows), inline=True)
+    embed.add_field(name="Team Red", value="\n".join(red_rows), inline=True)
+    return embed
+
+
 def _score_badge(
     participant: dict,
     score_by_puuid: dict[str, dict],
@@ -599,6 +689,8 @@ def _score_badge(
     win = participant.get("win")
     if win is True and player_score >= max(all_scores.values()):
         icon = resolver.by_emoji_name("mvp") if resolver is not None else ""
+        if not icon.strip():
+            icon = "\U0001F3C6MVP"
         return icon.strip()
 
     if win is False:
@@ -611,6 +703,8 @@ def _score_badge(
         team_scores = [score for p_id, score in all_scores.items() if p_id in team_puuids]
         if team_scores and player_score >= max(team_scores):
             icon = resolver.by_emoji_name("ace") if resolver is not None else ""
+            if not icon.strip():
+                icon = "\U0001F6E1\uFE0FACE"
             return icon.strip()
 
     return ""
@@ -796,6 +890,16 @@ def build_match_finished_embed(
                 author_icon_url=champion_icon_url or avatar_url,
                 embed_color=embed.color,
             )
+        recap_embed = _face_to_face_embed(
+            summary=summary,
+            participants=participants,
+            score_by_puuid=score_by_puuid,
+            tracked_by_puuid=tracked_by_puuid,
+            player_name=player_name,
+            author_icon_url=champion_icon_url or avatar_url,
+            embed_color=embed.color,
+            resolver=resolver,
+        )
 
         if match_datetime:
             embed.set_footer(text=f"Game date: {match_datetime}")
@@ -811,6 +915,8 @@ def build_match_finished_embed(
                 embed_color=embed.color,
                 resolver=resolver,
                 analysis_embed=analysis_embed,
+                recap_embed=recap_embed,
+                compact_solo=True,
             )
         return embed, file, view
 

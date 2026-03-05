@@ -11,6 +11,7 @@ CATEGORY_NAMES = {
     "team": "Team",
     "role": "Role",
 }
+CATEGORY_ORDER = ("global", "vs_opponent", "objectives", "team", "role")
 
 
 def _emoji(points: float) -> str:
@@ -76,4 +77,67 @@ def build_category_breakdown_embed(
         lines.append(f"{_emoji(points)} **{label}**: `{value:.1f}` | `{points:+.1f}` pts")
 
     embed.add_field(name="\u200b", value="\n".join(lines) if lines else "Aucun detail.", inline=False)
+    return embed
+
+
+def build_compact_breakdown_embed(
+    *,
+    score_payload: dict,
+    player_name: str,
+    author_name: str | None = None,
+    author_icon_url: str | None = None,
+    embed_color: discord.Color | None = None,
+    resolver: EmojiResolver | None = None,
+) -> discord.Embed:
+    role = str(score_payload.get("role") or "UNKNOWN")
+    final_score = float(score_payload.get("final_score") or 0.0)
+    final_grade = str(score_payload.get("final_grade") or "?")
+    cats = score_payload.get("categories") or {}
+
+    embed = discord.Embed(
+        title="Scoring",
+        color=embed_color or discord.Color.blurple(),
+        description=f"{player_name} | {final_score:.2f}/100 | {final_grade}",
+    )
+    if author_name:
+        if author_icon_url:
+            embed.set_author(name=author_name, icon_url=author_icon_url)
+        else:
+            embed.set_author(name=author_name)
+
+    if not isinstance(cats, dict):
+        embed.add_field(name="\u200b", value="Aucune donnee de scoring.", inline=False)
+        return embed
+
+    for key in CATEGORY_ORDER:
+        category = cats.get(key)
+        if not isinstance(category, dict):
+            continue
+        label = _cat_title(key, role)
+        icon = resolver.scoring_category(key) if resolver is not None else ""
+        rank = category.get("rank")
+        total_points = float(category.get("total_points") or 0.0)
+        header = f"{icon} {label}".strip()
+
+        metrics = category.get("metrics") or []
+        metric_lines: list[str] = []
+        if isinstance(metrics, list):
+            for metric in metrics:
+                if not isinstance(metric, dict):
+                    continue
+                metric_label = str(metric.get("label") or "?")
+                metric_value = float(metric.get("value") or 0.0)
+                metric_points = float(metric.get("points") or 0.0)
+                metric_lines.append(
+                    f"{_emoji(metric_points)} **{metric_label}**: `{metric_value:.1f}` | `{metric_points:+.1f} pts`"
+                )
+
+        embed.add_field(
+            name=f"{header} | `{rank}/10` | `{total_points:.2f} pts`",
+            value="\n".join(metric_lines[:8]) if metric_lines else "Aucun detail.",
+            inline=False,
+        )
+
+    if not embed.fields:
+        embed.add_field(name="\u200b", value="Aucune categorie disponible.", inline=False)
     return embed

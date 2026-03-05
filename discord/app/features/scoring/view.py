@@ -3,7 +3,7 @@ from __future__ import annotations
 import discord
 
 from app.core.emoji_resolver import EmojiResolver
-from app.features.scoring.breakdown import build_category_breakdown_embed
+from app.features.scoring.breakdown import build_category_breakdown_embed, build_compact_breakdown_embed
 
 
 def _role_label(role: str) -> str:
@@ -40,6 +40,8 @@ class MatchScoreBreakdownView(discord.ui.View):
         embed_color: discord.Color | None = None,
         resolver: EmojiResolver | None = None,
         analysis_embed: discord.Embed | None = None,
+        recap_embed: discord.Embed | None = None,
+        compact_solo: bool = False,
     ):
         super().__init__(timeout=None)
         self._base_embed = base_embed.copy()
@@ -50,9 +52,20 @@ class MatchScoreBreakdownView(discord.ui.View):
         self._embed_color = embed_color
         self._resolver = resolver
         self._analysis_embed = analysis_embed.copy() if analysis_embed is not None else None
+        self._recap_embed = recap_embed.copy() if recap_embed is not None else None
         role = str(score_payload.get("role") or "UNKNOWN")
         self.btn_role.label = _role_label(role)
         self.btn_advice.disabled = analysis_embed is None
+        self.btn_recap.disabled = recap_embed is None
+        self._setup_scoring_buttons()
+
+    def _setup_scoring_buttons(self) -> None:
+        self.btn_global.label = "Scoring"
+        self.btn_global.row = 0
+        self.remove_item(self.btn_vs)
+        self.remove_item(self.btn_obj)
+        self.remove_item(self.btn_team)
+        self.remove_item(self.btn_role)
 
     async def _edit(self, interaction: discord.Interaction, cat: str | None) -> None:
         if cat is None:
@@ -63,6 +76,23 @@ class MatchScoreBreakdownView(discord.ui.View):
                 await interaction.response.edit_message(embed=self._base_embed, view=self)
                 return
             await interaction.response.edit_message(embed=self._analysis_embed, view=self)
+            return
+        if cat == "recap":
+            if self._recap_embed is None:
+                await interaction.response.edit_message(embed=self._base_embed, view=self)
+                return
+            await interaction.response.edit_message(embed=self._recap_embed, view=self)
+            return
+        if cat == "all":
+            embed = build_compact_breakdown_embed(
+                score_payload=self._score_payload,
+                player_name=self._player_name,
+                author_name=self._author_name,
+                author_icon_url=self._author_icon_url,
+                embed_color=self._embed_color,
+                resolver=self._resolver,
+            )
+            await interaction.response.edit_message(embed=embed, view=self)
             return
 
         embed = build_category_breakdown_embed(
@@ -77,7 +107,7 @@ class MatchScoreBreakdownView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(
-        label="Revenir a l'embed de base",
+        label="Retour",
         style=discord.ButtonStyle.primary,
         custom_id="score_back",
         row=0,
@@ -94,9 +124,18 @@ class MatchScoreBreakdownView(discord.ui.View):
     async def btn_advice(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._edit(interaction, "analysis")
 
-    @discord.ui.button(label="Global", style=discord.ButtonStyle.secondary, custom_id="score_global", row=1)
+    @discord.ui.button(
+        label="Face a face",
+        style=discord.ButtonStyle.danger,
+        custom_id="score_recap",
+        row=0,
+    )
+    async def btn_recap(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._edit(interaction, "recap")
+
+    @discord.ui.button(label="Scoring", style=discord.ButtonStyle.secondary, custom_id="score_global", row=0)
     async def btn_global(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._edit(interaction, "global")
+        await self._edit(interaction, "all")
 
     @discord.ui.button(label="vs Opponent", style=discord.ButtonStyle.secondary, custom_id="score_vs", row=1)
     async def btn_vs(self, interaction: discord.Interaction, button: discord.ui.Button):
