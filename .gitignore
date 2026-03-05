@@ -61,3 +61,5 @@ coverage/
 *.swo
 .DS_Store
 Thumbs.db
+
+emoji_map.json
