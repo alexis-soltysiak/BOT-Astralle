@@ -75,6 +75,7 @@ def test_build_match_finished_embed_lists_all_tracked_players_in_same_match() ->
     embed, file, view = build_match_finished_embed(summary, tracked_by_puuid, resolver=None)
 
     assert embed.title == "Match a plusieurs - 2 tracked players"
+    assert embed.color == discord.Color.green()
     tracked_field = next(field for field in embed.fields if field.name == "Tracked players")
     assert "**Alpha#EUW**" in tracked_field.value
     assert "**Beta#EUW**" in tracked_field.value
@@ -83,6 +84,10 @@ def test_build_match_finished_embed_lists_all_tracked_players_in_same_match() ->
     labels = [getattr(child, "label", "") for child in view.children]
     assert "Resume" in labels
     assert "Face a face" in labels
+    summary_button = next(child for child in view.children if getattr(child, "label", "") == "Resume")
+    recap_button = next(child for child in view.children if getattr(child, "label", "") == "Face a face")
+    assert summary_button.style == discord.ButtonStyle.primary
+    assert recap_button.style == discord.ButtonStyle.danger
 
 
 def test_build_match_finished_embed_single_tracked_player_uses_compact_scoring_button_in_solo() -> None:
@@ -243,9 +248,10 @@ def test_build_match_finished_embed_face_to_face_uses_rank_icon_and_two_digit_sc
     assert recap_embed.description is None
     team_blue = next(field for field in recap_embed.fields if field.name == "Team Blue")
     assert "MVP" in team_blue.value
+    assert "\U0001F3C61\uFE0F\u20E3 100" in team_blue.value
     assert "Ahri | Alpha" in team_blue.value
     team_red = next(field for field in recap_embed.fields if field.name == "Team Red")
     assert "ACE" in team_red.value
     assert "**Beta**" in team_red.value
-    assert "🏆" not in team_blue.value
-    assert "🏆" not in team_red.value
+    assert "\U0001F3C6" in team_blue.value
+    assert "\U0001F3C6" in team_red.value

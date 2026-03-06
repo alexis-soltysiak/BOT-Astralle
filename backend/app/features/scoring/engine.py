@@ -430,6 +430,29 @@ def _compute_one_sync(
     }
 
 
+def _force_mvp_scores(results: list[dict]) -> None:
+    if not results:
+        return
+
+    scored_rows = []
+    for row in results:
+        try:
+            scored_rows.append((row, float(row.get("final_score") or 0.0)))
+        except Exception:
+            continue
+    if not scored_rows:
+        return
+
+    winning_rows = [(row, score) for row, score in scored_rows if bool(row.get("won") is True)]
+    if not winning_rows:
+        return
+
+    top_score = max(score for _, score in winning_rows)
+    for row, score in winning_rows:
+        if score >= top_score:
+            row["final_score"] = 100.0
+
+
 def _finalize_ranks_and_scores(params: dict, results: list[dict]) -> list[dict]:
     weights = params["final"]["weights"]
     alpha = float(params["final"]["alpha_rank_vs_raw"])
@@ -481,6 +504,8 @@ def _finalize_ranks_and_scores(params: dict, results: list[dict]) -> list[dict]:
     calibration = params.get("calibration")
     if isinstance(calibration, dict) and calibration.get("enabled") is True:
         _apply_v2_calibration(results, calibration)
+
+    _force_mvp_scores(results)
 
     for r in results:
         r["final_score"] = _round2(_clamp(float(r.get("final_score") or 0.0), 0.0, 100.0))

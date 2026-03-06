@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.features.scoring.engine import _compute_one_sync
+from app.features.scoring.engine import _compute_one_sync, _finalize_ranks_and_scores
 from app.features.scoring.params import load_params
 
 
@@ -118,3 +118,60 @@ def test_vs_opponent_metric_falls_back_to_endgame_delta_when_max_lane_fields_mis
     metrics = {metric["key"]: metric for metric in result["categories"]["vs_opponent"]["metrics"]}
     assert metrics["xp_diff"]["value"] == -1000.0
     assert metrics["gold_diff"]["value"] == -500.0
+
+
+def test_finalize_ranks_and_scores_forces_mvp_to_100() -> None:
+    params = load_params()
+    results = [
+        {
+            "puuid": "winner-mvp",
+            "role": "TOP",
+            "team_id": 100,
+            "won": True,
+            "categories": {
+                "global": {"total_points": 15.0, "rank": 0, "grade": "", "metrics": []},
+                "vs_opponent": {"total_points": 14.0, "rank": 0, "grade": "", "metrics": []},
+                "objectives": {"total_points": 12.0, "rank": 0, "grade": "", "metrics": []},
+                "team": {"total_points": 11.0, "rank": 0, "grade": "", "metrics": []},
+                "role": {"role": "TOP", "total_points": 13.0, "rank": 0, "grade": "", "metrics": []},
+            },
+            "final_score": 0.0,
+            "final_grade": "F",
+        },
+        {
+            "puuid": "winner-other",
+            "role": "JUNGLE",
+            "team_id": 100,
+            "won": True,
+            "categories": {
+                "global": {"total_points": 10.0, "rank": 0, "grade": "", "metrics": []},
+                "vs_opponent": {"total_points": 10.0, "rank": 0, "grade": "", "metrics": []},
+                "objectives": {"total_points": 10.0, "rank": 0, "grade": "", "metrics": []},
+                "team": {"total_points": 10.0, "rank": 0, "grade": "", "metrics": []},
+                "role": {"role": "JUNGLE", "total_points": 10.0, "rank": 0, "grade": "", "metrics": []},
+            },
+            "final_score": 0.0,
+            "final_grade": "F",
+        },
+        {
+            "puuid": "loser-top",
+            "role": "MID",
+            "team_id": 200,
+            "won": False,
+            "categories": {
+                "global": {"total_points": 9.0, "rank": 0, "grade": "", "metrics": []},
+                "vs_opponent": {"total_points": 9.0, "rank": 0, "grade": "", "metrics": []},
+                "objectives": {"total_points": 9.0, "rank": 0, "grade": "", "metrics": []},
+                "team": {"total_points": 9.0, "rank": 0, "grade": "", "metrics": []},
+                "role": {"role": "MID", "total_points": 9.0, "rank": 0, "grade": "", "metrics": []},
+            },
+            "final_score": 0.0,
+            "final_grade": "F",
+        },
+    ]
+
+    finalized = _finalize_ranks_and_scores(params, results)
+    by_puuid = {row["puuid"]: row for row in finalized}
+
+    assert by_puuid["winner-mvp"]["final_score"] == 100.0
+    assert by_puuid["winner-other"]["final_score"] < 100.0

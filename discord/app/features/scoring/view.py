@@ -206,10 +206,8 @@ class MatchTrackedPlayersView(discord.ui.View):
             self.add_item(advice_button)
 
     def _sync_button_state(self) -> None:
-        self.btn_summary.style = (
-            discord.ButtonStyle.primary if self._mode == "summary" else discord.ButtonStyle.secondary
-        )
-        self.btn_recap.style = discord.ButtonStyle.danger if self._mode == "recap" else discord.ButtonStyle.secondary
+        self.btn_summary.style = discord.ButtonStyle.primary
+        self.btn_recap.style = discord.ButtonStyle.danger
         self.btn_recap.disabled = self._recap_embed is None
         for idx, puuid in enumerate(self._order):
             is_current_stats = self._current_puuid == puuid and self._mode == "stats"
