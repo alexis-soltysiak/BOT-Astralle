@@ -562,15 +562,8 @@ def _tracked_summary_lines(
 ) -> list[str]:
     lines: list[str] = []
     for participant, _tracked in tracked_parts:
-        result = participant.get("win")
-        if result is True:
-            result_label = "W"
-        elif result is False:
-            result_label = "L"
-        else:
-            result_label = "?"
         lines.append(
-            f"`{result_label}` {_name_for(participant, tracked_by_puuid)}"
+            f"**{_name_for(participant, tracked_by_puuid)}**"
             f" | {participant.get('champion_name') or '?'}"
             f" | {_kda(participant)}"
         )
@@ -609,15 +602,18 @@ def _duel_line(
     participants: list[dict],
     tracked_by_puuid: dict[str, dict],
     resolver: EmojiResolver | None = None,
+    highlighted_puuids: set[str] | None = None,
+    badge_style: str = "icon",
 ) -> str:
     if participant is None:
         return "\U0001F3C6? -- | - | ?"
     rank_and_score = _duel_rank_and_score_label(participant, score_by_puuid)
-    badge = _score_badge(participant, score_by_puuid, participants, resolver)
+    badge = _score_badge(participant, score_by_puuid, participants, resolver, style=badge_style)
     champ = _champ_icon_for_participant(participant, resolver)
     raw_name = _name_for(participant, tracked_by_puuid)
-    base_name = str(raw_name or "Unknown").split("#", 1)[0].strip()
-    name = base_name[:6] if base_name else "Unk"
+    name = str(raw_name or "Unknown").split("#", 1)[0].strip() or "Unk"
+    if str(participant.get("puuid") or "") in (highlighted_puuids or set()):
+        name = f"**{name}**"
     champ_part = champ if champ else str(participant.get("champion_name") or "?")
     return " ".join(part for part in [badge, f"{rank_and_score} | {champ_part} | {name}"] if part)
 
@@ -632,6 +628,8 @@ def _face_to_face_embed(
     author_icon_url: str | None = None,
     embed_color: discord.Color | None = None,
     resolver: EmojiResolver | None = None,
+    highlighted_puuids: set[str] | None = None,
+    badge_style: str = "icon",
 ) -> discord.Embed:
     by_team_role: dict[tuple[int, str], dict] = {}
     for participant in participants:
@@ -647,8 +645,28 @@ def _face_to_face_embed(
     blue_rows: list[str] = []
     red_rows: list[str] = []
     for role in ROLE_ORDER:
-        blue_rows.append(_duel_line(by_team_role.get((100, role)), score_by_puuid, participants, tracked_by_puuid, resolver))
-        red_rows.append(_duel_line(by_team_role.get((200, role)), score_by_puuid, participants, tracked_by_puuid, resolver))
+        blue_rows.append(
+            _duel_line(
+                by_team_role.get((100, role)),
+                score_by_puuid,
+                participants,
+                tracked_by_puuid,
+                resolver,
+                highlighted_puuids=highlighted_puuids,
+                badge_style=badge_style,
+            )
+        )
+        red_rows.append(
+            _duel_line(
+                by_team_role.get((200, role)),
+                score_by_puuid,
+                participants,
+                tracked_by_puuid,
+                resolver,
+                highlighted_puuids=highlighted_puuids,
+                badge_style=badge_style,
+            )
+        )
 
     queue_id = _safe_int(summary.get("queue_id"))
     ranked_queue_type = summary.get("ranked_queue_type")
@@ -671,6 +689,7 @@ def _score_badge(
     score_by_puuid: dict[str, dict],
     participants: list[dict],
     resolver: EmojiResolver | None = None,
+    style: str = "icon",
 ) -> str:
     puuid = str(participant.get("puuid") or "")
     score_payload = score_by_puuid.get(puuid) or {}
@@ -688,6 +707,8 @@ def _score_badge(
 
     win = participant.get("win")
     if win is True and player_score >= max(all_scores.values()):
+        if style == "text":
+            return "MVP"
         icon = resolver.by_emoji_name("mvp") if resolver is not None else ""
         if not icon.strip():
             icon = "\U0001F3C6MVP"
@@ -702,6 +723,8 @@ def _score_badge(
         }
         team_scores = [score for p_id, score in all_scores.items() if p_id in team_puuids]
         if team_scores and player_score >= max(team_scores):
+            if style == "text":
+                return "ACE"
             icon = resolver.by_emoji_name("ace") if resolver is not None else ""
             if not icon.strip():
                 icon = "\U0001F6E1\uFE0FACE"
@@ -899,6 +922,14 @@ def build_match_finished_embed(
             author_icon_url=champion_icon_url or avatar_url,
             embed_color=embed.color,
             resolver=resolver,
+            highlighted_puuids={
+                str(opponent.get("puuid") or "")
+                for opponent in participants
+                if _safe_int(opponent.get("team_id")) in {100, 200}
+                and _safe_int(opponent.get("team_id")) != _safe_int(participant.get("team_id"))
+                and _role_for(opponent, score_by_puuid.get(str(opponent.get("puuid") or "")) or {}) == role
+            },
+            badge_style="text",
         )
 
         if match_datetime:
@@ -919,6 +950,43 @@ def build_match_finished_embed(
                 compact_solo=True,
             )
         return embed, file, view
+
+    def _summary_embed() -> tuple[discord.Embed, str | None]:
+        tracked_names = [_name_for(p, tracked_by_puuid) for p, _ in tracked_parts]
+        tracked_name_label = ", ".join(tracked_names[:3])
+        if len(tracked_names) > 3:
+            tracked_name_label += f" +{len(tracked_names) - 3}"
+
+        summary_embed = discord.Embed(
+            title=f"Match a plusieurs - {len(tracked_parts)} tracked players",
+            color=discord.Color.blurple(),
+        )
+        if tracked_name_label:
+            summary_embed.description = f"Partie suivie avec **{len(tracked_parts)} joueurs**: {tracked_name_label}"
+
+        focus_name = tracked_name_label or "Tracked players"
+        focus_icon_url = None
+        first_avatar = _avatar_url(tracked)
+        if first_avatar:
+            focus_icon_url = first_avatar
+        if focus_icon_url:
+            summary_embed.set_author(name=focus_name, icon_url=focus_icon_url)
+        else:
+            summary_embed.set_author(name=focus_name)
+
+        game_info_lines = [
+            f"\U0001F3AE {_game_type_label(summary.get('game_mode'), queue_id, ranked_queue_type)}",
+            f"\u23F1\uFE0F {_fmt_duration(duration)}",
+        ]
+        blue_tracked = sum(1 for p, _ in tracked_parts if _safe_int(p.get("team_id")) == 100)
+        red_tracked = sum(1 for p, _ in tracked_parts if _safe_int(p.get("team_id")) == 200)
+        if blue_tracked or red_tracked:
+            game_info_lines.append(f"\U0001F465 Tracked by team: Blue {blue_tracked} | Red {red_tracked}")
+        summary_embed.add_field(name="Resume", value="\n".join(game_info_lines), inline=False)
+        summary_embed.add_field(name="Tracked players", value="\n".join(tracked_summary_lines[:10]), inline=False)
+        if match_datetime:
+            summary_embed.set_footer(text=f"Game date: {match_datetime}")
+        return summary_embed, focus_icon_url
 
     def _player_embed(participant: dict, tracked: dict) -> tuple[discord.Embed, str, str | None]:
         puuid = str(participant.get("puuid") or "")
@@ -972,9 +1040,6 @@ def build_match_finished_embed(
 
         player_embed.add_field(name=BLANK, value="\n".join(info_lines), inline=True)
         player_embed.add_field(name=BLANK, value="\n".join(stats_lines), inline=True)
-
-        if len(tracked_summary_lines) > 1:
-            player_embed.add_field(name="Tracked players", value="\n".join(tracked_summary_lines[:6]), inline=False)
 
         spells_runes, items_line = _loadout_lines(participant, resolver)
         loadout_lines: list[str] = []
@@ -1040,7 +1105,24 @@ def build_match_finished_embed(
                 only["base_embed"].set_thumbnail(url="attachment://score.png")
 
     view: discord.ui.View | None = None
+    summary_embed, summary_author_icon = _summary_embed()
+    recap_embed = _face_to_face_embed(
+        summary=summary,
+        participants=participants,
+        score_by_puuid=score_by_puuid,
+        tracked_by_puuid=tracked_by_puuid,
+        player_name=", ".join(_name_for(p, tracked_by_puuid) for p, _ in tracked_parts[:3]),
+        author_icon_url=summary_author_icon,
+        embed_color=summary_embed.color,
+        resolver=resolver,
+        highlighted_puuids={str(p.get("puuid") or "") for p, _ in tracked_parts},
+        badge_style="text",
+    )
     if player_cards:
-        view = MatchTrackedPlayersView(player_cards=player_cards)
+        view = MatchTrackedPlayersView(
+            summary_embed=summary_embed,
+            player_cards=player_cards,
+            recap_embed=recap_embed,
+        )
 
-    return player_cards[0]["base_embed"], file, view
+    return summary_embed, file, view

@@ -155,11 +155,19 @@ class MatchScoreBreakdownView(discord.ui.View):
 
 
 class MatchTrackedPlayersView(discord.ui.View):
-    def __init__(self, *, player_cards: list[dict]) -> None:
+    def __init__(
+        self,
+        *,
+        summary_embed: discord.Embed,
+        player_cards: list[dict],
+        recap_embed: discord.Embed | None = None,
+    ) -> None:
         super().__init__(timeout=None)
+        self._summary_embed = summary_embed.copy()
+        self._recap_embed = recap_embed.copy() if recap_embed is not None else None
         self._cards = {str(card.get("puuid") or ""): card for card in player_cards if str(card.get("puuid") or "")}
         self._order = [str(card.get("puuid") or "") for card in player_cards if str(card.get("puuid") or "")]
-        self._mode = "stats"
+        self._mode = "summary"
         self._current_puuid = self._order[0] if self._order else None
         self._stats_buttons: list[discord.ui.Button] = []
         self._advice_buttons: list[discord.ui.Button] = []
@@ -173,13 +181,13 @@ class MatchTrackedPlayersView(discord.ui.View):
             stats_button = discord.ui.Button(
                 label=label,
                 style=discord.ButtonStyle.secondary,
-                row=0 if index < 5 else 1,
+                row=1 if index < 5 else 2,
                 custom_id=f"match_stats_{index}",
             )
             advice_button = discord.ui.Button(
                 label=f"Conseil {label}",
                 style=discord.ButtonStyle.secondary,
-                row=2 if index < 5 else 3,
+                row=3 if index < 5 else 4,
                 custom_id=f"match_advice_{index}",
                 disabled=card.get("analysis_embed") is None,
             )
@@ -198,6 +206,11 @@ class MatchTrackedPlayersView(discord.ui.View):
             self.add_item(advice_button)
 
     def _sync_button_state(self) -> None:
+        self.btn_summary.style = (
+            discord.ButtonStyle.primary if self._mode == "summary" else discord.ButtonStyle.secondary
+        )
+        self.btn_recap.style = discord.ButtonStyle.danger if self._mode == "recap" else discord.ButtonStyle.secondary
+        self.btn_recap.disabled = self._recap_embed is None
         for idx, puuid in enumerate(self._order):
             is_current_stats = self._current_puuid == puuid and self._mode == "stats"
             is_current_advice = self._current_puuid == puuid and self._mode == "advice"
@@ -209,6 +222,10 @@ class MatchTrackedPlayersView(discord.ui.View):
             )
 
     def _current_embed(self) -> discord.Embed | None:
+        if self._mode == "summary":
+            return self._summary_embed
+        if self._mode == "recap":
+            return self._recap_embed or self._summary_embed
         if self._current_puuid is None:
             return None
         card = self._cards.get(self._current_puuid) or {}
@@ -223,7 +240,10 @@ class MatchTrackedPlayersView(discord.ui.View):
 
     async def _switch(self, interaction: discord.Interaction, puuid: str, mode: str) -> None:
         self._current_puuid = puuid
-        self._mode = "advice" if mode == "advice" else "stats"
+        if mode in {"summary", "recap"}:
+            self._mode = mode
+        else:
+            self._mode = "advice" if mode == "advice" else "stats"
         current = self._cards.get(puuid) or {}
         if self._mode == "advice" and current.get("analysis_embed") is None:
             self._mode = "stats"
@@ -232,3 +252,15 @@ class MatchTrackedPlayersView(discord.ui.View):
         if embed is None:
             return await interaction.response.defer()
         await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, custom_id="match_summary", row=0)
+    async def btn_summary(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _ = button
+        target = self._current_puuid or (self._order[0] if self._order else "")
+        await self._switch(interaction, target, "summary")
+
+    @discord.ui.button(label="Face a face", style=discord.ButtonStyle.secondary, custom_id="match_recap", row=0)
+    async def btn_recap(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _ = button
+        target = self._current_puuid or (self._order[0] if self._order else "")
+        await self._switch(interaction, target, "recap")

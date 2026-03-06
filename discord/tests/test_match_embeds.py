@@ -74,12 +74,15 @@ def test_build_match_finished_embed_lists_all_tracked_players_in_same_match() ->
 
     embed, file, view = build_match_finished_embed(summary, tracked_by_puuid, resolver=None)
 
-    assert embed.author.name == "Alpha#EUW"
+    assert embed.title == "Match a plusieurs - 2 tracked players"
     tracked_field = next(field for field in embed.fields if field.name == "Tracked players")
-    assert "Alpha#EUW" in tracked_field.value
-    assert "Beta#EUW" in tracked_field.value
+    assert "**Alpha#EUW**" in tracked_field.value
+    assert "**Beta#EUW**" in tracked_field.value
     assert file is None
     assert view is not None
+    labels = [getattr(child, "label", "") for child in view.children]
+    assert "Resume" in labels
+    assert "Face a face" in labels
 
 
 def test_build_match_finished_embed_single_tracked_player_uses_compact_scoring_button_in_solo() -> None:
@@ -240,6 +243,9 @@ def test_build_match_finished_embed_face_to_face_uses_rank_icon_and_two_digit_sc
     assert recap_embed.description is None
     team_blue = next(field for field in recap_embed.fields if field.name == "Team Blue")
     assert "MVP" in team_blue.value
-    assert "🏆1️⃣ 09 | Ahri | Alpha" in team_blue.value
+    assert "Ahri | Alpha" in team_blue.value
     team_red = next(field for field in recap_embed.fields if field.name == "Team Red")
     assert "ACE" in team_red.value
+    assert "**Beta**" in team_red.value
+    assert "🏆" not in team_blue.value
+    assert "🏆" not in team_red.value
