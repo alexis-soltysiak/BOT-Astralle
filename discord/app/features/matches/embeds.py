@@ -559,15 +559,20 @@ def _tracked_participants(participants: list[dict], tracked_by_puuid: dict[str, 
 def _tracked_summary_lines(
     tracked_parts: list[tuple[dict, dict]],
     tracked_by_puuid: dict[str, dict],
+    score_by_puuid: dict[str, dict],
     resolver: EmojiResolver | None = None,
 ) -> list[str]:
     lines: list[str] = []
     for participant, _tracked in tracked_parts:
+        puuid = str(participant.get("puuid") or "")
+        score_payload = score_by_puuid.get(puuid) or {}
+        final_score = _safe_float(score_payload.get("final_score")) if isinstance(score_payload, dict) else 0.0
+        final_grade = str(score_payload.get("final_grade") or "?").strip() if isinstance(score_payload, dict) else "?"
         champ_icon = _champ_icon_for_participant(participant, resolver)
         prefix = f"{champ_icon} " if champ_icon else ""
         lines.append(
+            f"**{final_score:.2f}** | **{final_grade}** | "
             f"{prefix}**{_name_for(participant, tracked_by_puuid)}**"
-            f" | {participant.get('champion_name') or '?'}"
             f" | {_kda(participant)}"
         )
     return lines
@@ -601,6 +606,10 @@ def _duel_rank_and_score_label(participant: dict, score_by_puuid: dict[str, dict
     return f"\U0001F3C6{rank_label} {score_label}"
 
 
+def _strip_trophy_prefix(rank_and_score: str) -> str:
+    return rank_and_score[1:] if rank_and_score.startswith("\U0001F3C6") else rank_and_score
+
+
 def _champ_icon_for_participant(participant: dict, resolver: EmojiResolver | None = None) -> str:
     if resolver is None:
         return ""
@@ -621,6 +630,8 @@ def _duel_line(
         return "\U0001F3C6? -- | - | ?"
     rank_and_score = _duel_rank_and_score_label(participant, score_by_puuid)
     badge = _score_badge(participant, score_by_puuid, participants, resolver, style=badge_style)
+    if badge:
+        rank_and_score = _strip_trophy_prefix(rank_and_score)
     champ = _champ_icon_for_participant(participant, resolver)
     raw_name = _name_for(participant, tracked_by_puuid)
     name = str(raw_name or "Unknown").split("#", 1)[0].strip() or "Unk"
@@ -827,7 +838,7 @@ def build_match_finished_embed(
         return embed, None, None
 
     participant, tracked = focus
-    tracked_summary_lines = _tracked_summary_lines(tracked_parts, tracked_by_puuid, resolver)
+    tracked_summary_lines = _tracked_summary_lines(tracked_parts, tracked_by_puuid, score_by_puuid, resolver)
     queue_id = _safe_int(summary.get("queue_id"))
     ranked_queue_type = summary.get("ranked_queue_type")
     is_unscored_mode = _is_unscored_mode(summary.get("game_mode"), queue_id, ranked_queue_type)

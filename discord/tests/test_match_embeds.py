@@ -248,10 +248,10 @@ def test_build_match_finished_embed_face_to_face_uses_rank_icon_and_two_digit_sc
     assert recap_embed.description is None
     team_blue = next(field for field in recap_embed.fields if field.name == "Team Blue")
     assert "MVP" in team_blue.value
-    assert "\U0001F3C61\uFE0F\u20E3 100" in team_blue.value
+    assert "MVP 1\uFE0F\u20E3 100" in team_blue.value
     assert "Ahri | Alpha" in team_blue.value
     team_red = next(field for field in recap_embed.fields if field.name == "Team Red")
-    assert "ACE" in team_red.value
+    assert "ACE 2\uFE0F\u20E3 71" in team_red.value
     assert "**Beta**" in team_red.value
     assert "\U0001F3C6" in team_blue.value
     assert "\U0001F3C6" in team_red.value
