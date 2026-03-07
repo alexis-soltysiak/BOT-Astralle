@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.features.leaderboards.ingest import refresh_leaderboards_job
 from app.features.live_games.ingest import refresh_live_games_job
 from app.features.matches.ingest import ingest_matches_job
+from app.features.matches.recap_ingest import ingest_daily_lp_recap_job
 JobFn = Callable[[AsyncSession], Awaitable[None]]
 
 
@@ -17,6 +18,9 @@ class JobSpec:
     description: str
     interval_seconds: int
     fn: JobFn
+    trigger: str = "interval"
+    hour: int | None = None
+    minute: int | None = None
 
 
 async def heartbeat(_: AsyncSession) -> None:
@@ -47,6 +51,15 @@ JOB_SPECS: list[JobSpec] = [
         description="Ingest latest completed matches and create publication events",
         interval_seconds=60,
         fn=ingest_matches_job,
+    ),
+    JobSpec(
+        job_key="daily_lp_recap",
+        description="Publish daily LP recap at 23:00 local scheduler time",
+        interval_seconds=86400,
+        fn=ingest_daily_lp_recap_job,
+        trigger="cron",
+        hour=23,
+        minute=0,
     ),
 ]
 

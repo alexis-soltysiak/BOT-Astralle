@@ -450,7 +450,7 @@ def _compact_rank_summary_line(participant: dict, score_by_puuid: dict[str, dict
             rank = _safe_int(cat.get("rank"))
             if rank is None:
                 continue
-            parts.append(f"{icon}{_rank_icon(rank)}")
+            parts.append(f"{icon}{rank}")
     return " \u2022 ".join(parts)
 
 

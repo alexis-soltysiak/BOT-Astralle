@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     riot_api_key: str = ""
 
     scheduler_enabled: bool = True
+    scheduler_timezone: str = "Europe/Paris"
+    daily_lp_recap_enabled: bool = True
+    daily_lp_recap_hour: int = 23
+    daily_lp_recap_minute: int = 0
 
     matches_ingest_count: int = 10
 
