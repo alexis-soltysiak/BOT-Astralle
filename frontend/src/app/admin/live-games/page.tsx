@@ -33,6 +33,10 @@ function lpLabel(player: LiveGamePredictionPlayer): string {
   return player.elo_lp_total === null ? "-" : String(player.elo_lp_total);
 }
 
+function gamesLabel(player: LiveGamePredictionPlayer): string {
+  return player.games_count === null ? "N/A" : String(player.games_count);
+}
+
 function teamRows(prediction: LiveGameWinPrediction, teamId: number): LiveGamePredictionPlayer[] {
   return prediction.players.filter((p) => p.team_id === teamId);
 }
@@ -214,7 +218,7 @@ export default function LiveGamesPage() {
                           <span className="truncate">{player.player_name}</span>
                           <span>
                             skill {player.skill_value.toFixed(4)} | score {scoreLabel(player)} | elo {lpLabel(player)} |
-                            games {player.games_count}
+                            games {gamesLabel(player)}{player.is_tracked ? " | tracked" : ""}
                           </span>
                         </div>
                       ))}
@@ -230,7 +234,7 @@ export default function LiveGamesPage() {
                           <span className="truncate">{player.player_name}</span>
                           <span>
                             skill {player.skill_value.toFixed(4)} | score {scoreLabel(player)} | elo {lpLabel(player)} |
-                            games {player.games_count}
+                            games {gamesLabel(player)}{player.is_tracked ? " | tracked" : ""}
                           </span>
                         </div>
                       ))}

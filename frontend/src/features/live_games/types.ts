@@ -2,7 +2,8 @@ export type LiveGamePredictionPlayer = {
   puuid: string;
   player_name: string;
   team_id: number;
-  games_count: number;
+  is_tracked?: boolean;
+  games_count: number | null;
   recent_scores: number[];
   weighted_recent_score: number | null;
   elo_lp_total: number | null;

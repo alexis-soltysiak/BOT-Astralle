@@ -18,6 +18,7 @@ from app.features.live_games.local_champion_map import load_local_champion_map
 from app.features.live_games.repository import LiveGamesRepository
 from app.features.live_games.schemas import LiveGameOut
 from app.features.matches.models import Match
+from app.features.scoring.engine import compute_match_scoring
 from app.features.scoring.models import MatchScore
 from app.features.tracked_players.repository import TrackedPlayersRepository
 from app.infra.riot_client import RiotClient
@@ -36,6 +37,8 @@ _CHAMPION_CACHE: dict[int, dict[str, str]] = {}
 _CHAMPION_CACHE_EXPIRES_AT: datetime | None = None
 _PREDICTION_CACHE: dict[str, dict[str, object]] = {}
 _PREDICTION_CACHE_TTL_SECONDS = 600
+_RIOT_RECENT_SCORES_CACHE: dict[str, dict[str, object]] = {}
+_RIOT_RECENT_SCORES_TTL_SECONDS = 900
 _PREDICTION_MODEL_VERSION = "v1_weighted10_elo_lp"
 _TEAM_IDS = (100, 200)
 _BLUE_TEAM_ID = 100
@@ -146,7 +149,16 @@ def _player_skill_value(weighted_score: float | None, elo_component: float | Non
         raw = score_component
     elif elo_component is not None:
         raw = elo_component
-    confidence = _clamp(games_count / float(_RECENT_MATCH_LIMIT), 0.0, 1.0)
+    score_confidence = _clamp(games_count / float(_RECENT_MATCH_LIMIT), 0.0, 1.0)
+    if score_component is not None and elo_component is not None:
+        # Keep ELO signal active even when we have only a few scored matches.
+        confidence = max(score_confidence, 0.65)
+    elif score_component is not None:
+        confidence = score_confidence
+    elif elo_component is not None:
+        confidence = 0.65
+    else:
+        confidence = 0.0
     return _PLAYER_BASELINE_SKILL + (raw - _PLAYER_BASELINE_SKILL) * confidence
 
 
@@ -264,6 +276,67 @@ class LiveGamesService:
             values.append(score)
         return values
 
+    async def _riot_recent_scores_for_puuid(
+        self,
+        *,
+        client: RiotClient,
+        region: str,
+        puuid: str,
+        limit: int = _RECENT_MATCH_LIMIT,
+    ) -> list[float]:
+        cache_key = f"{region}:{puuid}"
+        now = datetime.now(timezone.utc)
+        cached = _RIOT_RECENT_SCORES_CACHE.get(cache_key)
+        if isinstance(cached, dict):
+            expires_at = cached.get("expires_at")
+            if isinstance(expires_at, datetime) and now < expires_at:
+                scores = cached.get("scores")
+                if isinstance(scores, list):
+                    return [float(value) for value in scores]
+
+        await asyncio.sleep(0.02 + random.random() * 0.04)
+        try:
+            match_ids = await client.get_match_ids_by_puuid(region, puuid, 0, limit)
+        except Exception:
+            self._log.exception("live_prediction_riot_match_ids_failed", region=region, puuid=puuid)
+            return []
+        if not match_ids:
+            _RIOT_RECENT_SCORES_CACHE[cache_key] = {
+                "expires_at": now + timedelta(seconds=_RIOT_RECENT_SCORES_TTL_SECONDS),
+                "scores": [],
+            }
+            return []
+
+        sem = asyncio.Semaphore(3)
+
+        async def _score_one_match(match_id: str) -> float | None:
+            async with sem:
+                await asyncio.sleep(0.03 + random.random() * 0.05)
+                try:
+                    match_payload = await client.get_match(region, match_id)
+                    scores = await compute_match_scoring(match_payload)
+                except Exception:
+                    self._log.exception(
+                        "live_prediction_riot_match_score_failed",
+                        region=region,
+                        puuid=puuid,
+                        match_id=match_id,
+                    )
+                    return None
+            target = next((row for row in scores if str(row.get("puuid") or "") == puuid), None)
+            if not isinstance(target, dict):
+                return None
+            score = _safe_float(target.get("final_score"))
+            return score
+
+        raw_scores = await asyncio.gather(*(_score_one_match(match_id) for match_id in match_ids[:limit]))
+        cleaned_scores = [float(score) for score in raw_scores if score is not None]
+        _RIOT_RECENT_SCORES_CACHE[cache_key] = {
+            "expires_at": now + timedelta(seconds=_RIOT_RECENT_SCORES_TTL_SECONDS),
+            "scores": cleaned_scores,
+        }
+        return cleaned_scores
+
     def _participant_display_name(self, participant: dict) -> str:
         riot_id = str(participant.get("riotId") or "").strip()
         if riot_id:
@@ -297,6 +370,9 @@ class LiveGamesService:
         session: AsyncSession,
         game_id: str,
         payload: dict,
+        tracked_puuids: set[str] | None = None,
+        riot_client: RiotClient | None = None,
+        riot_region: str | None = None,
     ) -> dict | None:
         participants = payload.get("participants")
         if not isinstance(participants, list) or not participants:
@@ -321,18 +397,30 @@ class LiveGamesService:
             team_id = _safe_int(participant.get("teamId"))
             if not puuid or team_id not in _TEAM_IDS:
                 return None
+            is_tracked = puuid in (tracked_puuids or set())
             async with sem:
                 await asyncio.sleep(0.02 + random.random() * 0.03)
                 recent_scores = await self._recent_scores_for_puuid(session, puuid)
+                if not recent_scores and riot_client is not None and riot_region:
+                    recent_scores = await self._riot_recent_scores_for_puuid(
+                        client=riot_client,
+                        region=riot_region,
+                        puuid=puuid,
+                        limit=_RECENT_MATCH_LIMIT,
+                    )
             weighted_score = _recent_weighted_score(recent_scores)
             lp_total = _lp_total_from_ranked_state(participant.get("rankedState"))
             elo_component = _normalized_elo_component(lp_total)
             skill = _player_skill_value(weighted_score, elo_component, len(recent_scores))
+            games_count = len(recent_scores)
+            if not is_tracked and games_count == 0:
+                games_count = None
             return {
                 "puuid": puuid,
                 "player_name": self._participant_display_name(participant),
                 "team_id": team_id,
-                "games_count": len(recent_scores),
+                "is_tracked": is_tracked,
+                "games_count": games_count,
                 "recent_scores": [round(value, 2) for value in recent_scores],
                 "weighted_recent_score": None if weighted_score is None else round(weighted_score, 2),
                 "elo_lp_total": lp_total,
@@ -651,8 +739,11 @@ class LiveGamesService:
             await client.aclose()
 
     async def list(self, session: AsyncSession, only_active: bool) -> list[LiveGameOut]:
+        settings = get_settings()
         players = await self._players_repo.get_all(session)
         players_by_id = {str(p.id): p for p in players}
+        tracked_puuids = {str(p.puuid or "").strip() for p in players if getattr(p, "puuid", None)}
+        tracked_puuids.discard("")
         latest = await self._leaderboards_repo.get_latest_snapshots(session)
         snaps_by_player: dict[str, dict[str, RankedSnapshot]] = {}
         for snapshot in latest:
@@ -671,11 +762,34 @@ class LiveGamesService:
             game_payloads[state.game_id] = payload
 
         if game_payloads:
-            tasks = [
-                self._compute_prediction_for_game(session=session, game_id=game_id, payload=payload)
-                for game_id, payload in game_payloads.items()
-            ]
-            predictions = await asyncio.gather(*tasks)
+            game_regions: dict[str, str] = {}
+            for state in states:
+                if state.status != "live" or not state.game_id:
+                    continue
+                player = players_by_id.get(str(state.tracked_player_id))
+                region = str(getattr(player, "region", "") or "").strip().lower() if player is not None else ""
+                if region and state.game_id not in game_regions:
+                    game_regions[state.game_id] = region
+
+            riot_client: RiotClient | None = None
+            if settings.riot_api_key.strip():
+                riot_client = RiotClient(settings.riot_api_key)
+            try:
+                tasks = [
+                    self._compute_prediction_for_game(
+                        session=session,
+                        game_id=game_id,
+                        payload=payload,
+                        tracked_puuids=tracked_puuids,
+                        riot_client=riot_client,
+                        riot_region=game_regions.get(game_id),
+                    )
+                    for game_id, payload in game_payloads.items()
+                ]
+                predictions = await asyncio.gather(*tasks)
+            finally:
+                if riot_client is not None:
+                    await riot_client.aclose()
             prediction_by_game_id = {
                 game_id: prediction
                 for game_id, prediction in zip(game_payloads.keys(), predictions, strict=False)
