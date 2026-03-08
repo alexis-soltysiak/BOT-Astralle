@@ -90,39 +90,34 @@ function TeamAnalysisTable({
           <Badge variant="secondary">excluded {excluded}</Badge>
         </div>
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Player</TableHead>
-            <TableHead>Tracked</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead>Games</TableHead>
-            <TableHead>Score</TableHead>
-            <TableHead>ELO</TableHead>
-            <TableHead>Signal</TableHead>
-            <TableHead>Contribution</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((player) => {
-            const signal = hasSignal(player);
-            return (
-              <TableRow key={player.puuid}>
-                <TableCell className="max-w-[180px] truncate font-medium">{player.player_name}</TableCell>
-                <TableCell>{player.is_tracked ? "yes" : "no"}</TableCell>
-                <TableCell>{sourceLabel(player)}</TableCell>
-                <TableCell>{gamesLabel(player)}</TableCell>
-                <TableCell>{scoreLabel(player)}</TableCell>
-                <TableCell>{lpLabel(player)}</TableCell>
-                <TableCell>{signal ? "usable" : "missing"}</TableCell>
-                <TableCell className={signal ? "font-mono text-xs" : "text-xs text-slate-400"}>
-                  {contribution(player)}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+      <div className="space-y-2">
+        {rows.map((player) => {
+          const signal = hasSignal(player);
+          return (
+            <div
+              key={player.puuid}
+              className="rounded-lg border border-white/10 bg-slate-950/30 p-2.5"
+            >
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <div className="max-w-[70%] truncate text-sm font-medium text-white">{player.player_name}</div>
+                <div className={`font-mono text-xs ${signal ? "text-slate-100" : "text-slate-400"}`}>
+                  contribution {contribution(player)}
+                </div>
+              </div>
+              <div className="grid gap-x-4 gap-y-1 text-xs text-slate-300 md:grid-cols-4">
+                <div>tracked: {player.is_tracked ? "yes" : "no"}</div>
+                <div>source: {sourceLabel(player)}</div>
+                <div>games: {gamesLabel(player)}</div>
+                <div>signal: {signal ? "usable" : "missing"}</div>
+                <div>score: {scoreLabel(player)}</div>
+                <div>elo: {lpLabel(player)}</div>
+                <div>elo norm: {player.elo_component === null ? "-" : player.elo_component.toFixed(4)}</div>
+                <div>skill: {player.skill_value.toFixed(4)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -311,7 +306,7 @@ export default function LiveGamesPage() {
                     <div className="mt-1 truncate font-medium">{prediction.formula}</div>
                   </div>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-4">
                   <TeamAnalysisTable
                     teamName="Team Blue"
                     teamColor="blue"

@@ -38,18 +38,23 @@ _CHAMPION_CACHE_EXPIRES_AT: datetime | None = None
 _PREDICTION_CACHE: dict[str, dict[str, object]] = {}
 _PREDICTION_CACHE_TTL_SECONDS = 600
 _RIOT_RECENT_SCORES_CACHE: dict[str, dict[str, object]] = {}
-_RIOT_RECENT_SCORES_TTL_SECONDS = 900
-_PREDICTION_MODEL_VERSION = "v1_weighted10_elo_lp"
+_RIOT_RECENT_SCORES_TTL_SECONDS = 3600
+_RIOT_RATE_LIMIT_COOLDOWN: dict[str, datetime] = {}
+_PREDICTION_MODEL_VERSION = "v1_weighted5_elo_lp_rlsafe"
 _TEAM_IDS = (100, 200)
 _BLUE_TEAM_ID = 100
 _RED_TEAM_ID = 200
-_RECENT_MATCH_LIMIT = 10
-_RECENT_SCORE_WEIGHTS = [1.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+_RECENT_MATCH_LIMIT = 5
+_RECENT_SCORE_WEIGHTS = [1.0, 1.0, 1.0, 0.85, 0.7]
 _LAST3_RECENCY_MULTIPLIER = 1.35
 _SCORE_COMPONENT_WEIGHT = 0.7
 _ELO_COMPONENT_WEIGHT = 0.3
 _PLAYER_BASELINE_SKILL = 0.5
 _MAX_LP_NORMALIZER = 4400.0
+_RIOT_REQUEST_DELAY_SECONDS = 0.5
+_RIOT_MAX_RETRIES = 2
+_RIOT_RETRY_BASE_SECONDS = 0.5
+_RIOT_NON_TRACKED_FALLBACK_MAX_PLAYERS = 6
 _TIER_TO_INDEX = {
     "IRON": 0,
     "BRONZE": 1,
@@ -97,6 +102,19 @@ def _clamp(value: float, lower: float, upper: float) -> float:
 
 def _sigmoid(value: float) -> float:
     return 1.0 / (1.0 + math.exp(-value))
+
+
+def _retry_after_seconds(error: httpx.HTTPStatusError) -> float | None:
+    try:
+        value = error.response.headers.get("Retry-After")
+        if value is None:
+            return None
+        parsed = float(value.strip())
+        if parsed < 0:
+            return None
+        return parsed
+    except Exception:
+        return None
 
 
 def _recent_weighted_score(scores: list[float]) -> float | None:
@@ -276,6 +294,58 @@ class LiveGamesService:
             values.append(score)
         return values
 
+    async def _riot_call_with_retry(
+        self,
+        *,
+        endpoint_key: str,
+        action_name: str,
+        context: dict[str, str],
+        fn,
+    ):
+        now = datetime.now(timezone.utc)
+        cooldown_until = _RIOT_RATE_LIMIT_COOLDOWN.get(endpoint_key)
+        if isinstance(cooldown_until, datetime) and now < cooldown_until:
+            self._log.info(
+                "live_prediction_riot_rate_limit_cooldown_skip",
+                endpoint=endpoint_key,
+                cooldown_until=cooldown_until.isoformat(),
+                **context,
+            )
+            raise RuntimeError("riot_rate_limit_cooldown")
+
+        for attempt in range(_RIOT_MAX_RETRIES + 1):
+            await asyncio.sleep(_RIOT_REQUEST_DELAY_SECONDS + random.random() * 0.08)
+            try:
+                return await fn()
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 429:
+                    raise
+                retry_after = _retry_after_seconds(error)
+                if retry_after is None:
+                    retry_after = _RIOT_RETRY_BASE_SECONDS * (2**attempt)
+                retry_after += random.random() * 0.2
+                if attempt >= _RIOT_MAX_RETRIES:
+                    _RIOT_RATE_LIMIT_COOLDOWN[endpoint_key] = datetime.now(timezone.utc) + timedelta(
+                        seconds=max(5.0, retry_after)
+                    )
+                    self._log.warning(
+                        "live_prediction_riot_rate_limit_exhausted",
+                        endpoint=endpoint_key,
+                        action=action_name,
+                        retry_after=round(retry_after, 2),
+                        **context,
+                    )
+                    raise
+                self._log.warning(
+                    "live_prediction_riot_rate_limit_retry",
+                    endpoint=endpoint_key,
+                    action=action_name,
+                    attempt=attempt + 1,
+                    retry_after=round(retry_after, 2),
+                    **context,
+                )
+                await asyncio.sleep(retry_after)
+
     async def _riot_recent_scores_for_puuid(
         self,
         *,
@@ -285,6 +355,8 @@ class LiveGamesService:
         limit: int = _RECENT_MATCH_LIMIT,
     ) -> list[float]:
         cache_key = f"{region}:{puuid}"
+        ids_endpoint_key = f"ids:{region}"
+        match_endpoint_key = f"match:{region}"
         now = datetime.now(timezone.utc)
         cached = _RIOT_RECENT_SCORES_CACHE.get(cache_key)
         if isinstance(cached, dict):
@@ -294,9 +366,15 @@ class LiveGamesService:
                 if isinstance(scores, list):
                     return [float(value) for value in scores]
 
-        await asyncio.sleep(0.02 + random.random() * 0.04)
         try:
-            match_ids = await client.get_match_ids_by_puuid(region, puuid, 0, limit)
+            match_ids = await self._riot_call_with_retry(
+                endpoint_key=ids_endpoint_key,
+                action_name="get_match_ids_by_puuid",
+                context={"region": region, "puuid": puuid},
+                fn=lambda: client.get_match_ids_by_puuid(region, puuid, 0, limit),
+            )
+        except RuntimeError:
+            return []
         except Exception:
             self._log.exception("live_prediction_riot_match_ids_failed", region=region, puuid=puuid)
             return []
@@ -308,14 +386,20 @@ class LiveGamesService:
             }
             return []
 
-        sem = asyncio.Semaphore(3)
+        sem = asyncio.Semaphore(2)
 
         async def _score_one_match(match_id: str) -> float | None:
             async with sem:
-                await asyncio.sleep(0.03 + random.random() * 0.05)
                 try:
-                    match_payload = await client.get_match(region, match_id)
+                    match_payload = await self._riot_call_with_retry(
+                        endpoint_key=match_endpoint_key,
+                        action_name="get_match",
+                        context={"region": region, "puuid": puuid, "match_id": match_id},
+                        fn=lambda: client.get_match(region, match_id),
+                    )
                     scores = await compute_match_scoring(match_payload)
+                except RuntimeError:
+                    return None
                 except Exception:
                     self._log.exception(
                         "live_prediction_riot_match_score_failed",
@@ -397,6 +481,18 @@ class LiveGamesService:
                     return prediction
 
         sem = asyncio.Semaphore(4)
+        non_tracked_candidates: list[str] = []
+        seen_puuids: set[str] = set()
+        for participant in participants:
+            if not isinstance(participant, dict):
+                continue
+            puuid = str(participant.get("puuid") or "").strip()
+            if not puuid or puuid in seen_puuids:
+                continue
+            seen_puuids.add(puuid)
+            if puuid not in (tracked_puuids or set()):
+                non_tracked_candidates.append(puuid)
+        non_tracked_fallback_allowed = set(non_tracked_candidates[:_RIOT_NON_TRACKED_FALLBACK_MAX_PLAYERS])
 
         async def _one(participant: dict) -> dict | None:
             if not isinstance(participant, dict):
@@ -412,7 +508,8 @@ class LiveGamesService:
                 recent_scores = await self._recent_scores_for_puuid(session, puuid)
                 if recent_scores:
                     history_source = "local"
-                if not recent_scores and riot_client is not None and riot_region:
+                can_use_riot_fallback = puuid in non_tracked_fallback_allowed or is_tracked
+                if not recent_scores and can_use_riot_fallback and riot_client is not None and riot_region:
                     recent_scores = await self._riot_recent_scores_for_puuid(
                         client=riot_client,
                         region=riot_region,
