@@ -301,6 +301,7 @@ class LiveGamesService:
             self._log.exception("live_prediction_riot_match_ids_failed", region=region, puuid=puuid)
             return []
         if not match_ids:
+            self._log.info("live_prediction_riot_no_match_history", region=region, puuid=puuid)
             _RIOT_RECENT_SCORES_CACHE[cache_key] = {
                 "expires_at": now + timedelta(seconds=_RIOT_RECENT_SCORES_TTL_SECONDS),
                 "scores": [],
@@ -331,6 +332,13 @@ class LiveGamesService:
 
         raw_scores = await asyncio.gather(*(_score_one_match(match_id) for match_id in match_ids[:limit]))
         cleaned_scores = [float(score) for score in raw_scores if score is not None]
+        if match_ids and not cleaned_scores:
+            self._log.warning(
+                "live_prediction_riot_scores_empty_after_fetch",
+                region=region,
+                puuid=puuid,
+                match_ids_count=len(match_ids),
+            )
         _RIOT_RECENT_SCORES_CACHE[cache_key] = {
             "expires_at": now + timedelta(seconds=_RIOT_RECENT_SCORES_TTL_SECONDS),
             "scores": cleaned_scores,
@@ -398,9 +406,12 @@ class LiveGamesService:
             if not puuid or team_id not in _TEAM_IDS:
                 return None
             is_tracked = puuid in (tracked_puuids or set())
+            history_source = "none"
             async with sem:
                 await asyncio.sleep(0.02 + random.random() * 0.03)
                 recent_scores = await self._recent_scores_for_puuid(session, puuid)
+                if recent_scores:
+                    history_source = "local"
                 if not recent_scores and riot_client is not None and riot_region:
                     recent_scores = await self._riot_recent_scores_for_puuid(
                         client=riot_client,
@@ -408,6 +419,8 @@ class LiveGamesService:
                         puuid=puuid,
                         limit=_RECENT_MATCH_LIMIT,
                     )
+                    if recent_scores:
+                        history_source = "riot"
             weighted_score = _recent_weighted_score(recent_scores)
             lp_total = _lp_total_from_ranked_state(participant.get("rankedState"))
             elo_component = _normalized_elo_component(lp_total)
@@ -420,6 +433,7 @@ class LiveGamesService:
                 "player_name": self._participant_display_name(participant),
                 "team_id": team_id,
                 "is_tracked": is_tracked,
+                "history_source": history_source,
                 "games_count": games_count,
                 "recent_scores": [round(value, 2) for value in recent_scores],
                 "weighted_recent_score": None if weighted_score is None else round(weighted_score, 2),

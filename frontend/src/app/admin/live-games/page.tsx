@@ -37,6 +37,12 @@ function gamesLabel(player: LiveGamePredictionPlayer): string {
   return player.games_count === null ? "N/A" : String(player.games_count);
 }
 
+function sourceLabel(player: LiveGamePredictionPlayer): string {
+  if (player.history_source === "local") return "local";
+  if (player.history_source === "riot") return "riot";
+  return "none";
+}
+
 function teamRows(prediction: LiveGameWinPrediction, teamId: number): LiveGamePredictionPlayer[] {
   return prediction.players.filter((p) => p.team_id === teamId);
 }
@@ -218,7 +224,8 @@ export default function LiveGamesPage() {
                           <span className="truncate">{player.player_name}</span>
                           <span>
                             skill {player.skill_value.toFixed(4)} | score {scoreLabel(player)} | elo {lpLabel(player)} |
-                            games {gamesLabel(player)}{player.is_tracked ? " | tracked" : ""}
+                            games {gamesLabel(player)} | src {sourceLabel(player)}
+                            {player.is_tracked ? " | tracked" : ""}
                           </span>
                         </div>
                       ))}
@@ -234,7 +241,8 @@ export default function LiveGamesPage() {
                           <span className="truncate">{player.player_name}</span>
                           <span>
                             skill {player.skill_value.toFixed(4)} | score {scoreLabel(player)} | elo {lpLabel(player)} |
-                            games {gamesLabel(player)}{player.is_tracked ? " | tracked" : ""}
+                            games {gamesLabel(player)} | src {sourceLabel(player)}
+                            {player.is_tracked ? " | tracked" : ""}
                           </span>
                         </div>
                       ))}

@@ -3,6 +3,7 @@ export type LiveGamePredictionPlayer = {
   player_name: string;
   team_id: number;
   is_tracked?: boolean;
+  history_source?: "local" | "riot" | "none";
   games_count: number | null;
   recent_scores: number[];
   weighted_recent_score: number | null;
