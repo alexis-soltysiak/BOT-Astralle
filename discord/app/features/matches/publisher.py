@@ -70,7 +70,6 @@ async def run_outbox_publisher(
                 continue
 
             finished_channel_id: int | None = None
-            live_channel_id: int | None = None
             if guild_id is not None:
                 bindings = await backend.list_discord_bindings(guild_id=guild_id)
                 for b in bindings:
@@ -79,11 +78,6 @@ async def run_outbox_publisher(
                             finished_channel_id = int(b.get("channel_id") or "0")
                         except Exception:
                             finished_channel_id = None
-                    if str(b.get("binding_key") or "") == "LIVE_GAMES_MESSAGE" and b.get("is_enabled", True):
-                        try:
-                            live_channel_id = int(b.get("channel_id") or "0")
-                        except Exception:
-                            live_channel_id = None
 
             for ev in events:
                 ev_id = str(ev.get("id") or "")
@@ -92,11 +86,11 @@ async def run_outbox_publisher(
 
                 try:
                     if ev_type == "daily_lp_recap":
-                        if live_channel_id is None:
+                        if finished_channel_id is None:
                             await backend.ack_publication_event(ev_id, ok=True)
                             continue
 
-                        ch = bot.get_channel(live_channel_id)
+                        ch = bot.get_channel(finished_channel_id)
                         if ch is None:
                             await backend.ack_publication_event(ev_id, ok=False, error="channel_not_found")
                             continue

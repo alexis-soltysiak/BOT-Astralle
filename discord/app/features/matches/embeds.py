@@ -947,13 +947,7 @@ def build_match_finished_embed(
             author_icon_url=champion_icon_url or avatar_url,
             embed_color=embed.color,
             resolver=resolver,
-            highlighted_puuids={
-                str(opponent.get("puuid") or "")
-                for opponent in participants
-                if _safe_int(opponent.get("team_id")) in {100, 200}
-                and _safe_int(opponent.get("team_id")) != _safe_int(participant.get("team_id"))
-                and _role_for(opponent, score_by_puuid.get(str(opponent.get("puuid") or "")) or {}) == role
-            },
+            highlighted_puuids={str(participant.get("puuid") or "")},
             badge_style="text",
         )
 

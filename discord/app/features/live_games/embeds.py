@@ -307,6 +307,27 @@ def _team_value(
     return "\n".join(rows[:5]) if rows else "-"
 
 
+def _team_win_probability(row: dict, team_id: int) -> float | None:
+    prediction = row.get("win_prediction")
+    if not isinstance(prediction, dict):
+        return None
+    key = "team_blue" if team_id == BLUE_TEAM_ID else "team_red"
+    team_data = prediction.get(key)
+    if not isinstance(team_data, dict):
+        return None
+    try:
+        return float(team_data.get("win_probability"))
+    except Exception:
+        return None
+
+
+def _team_field_name(base_name: str, row: dict, team_id: int) -> str:
+    probability = _team_win_probability(row, team_id)
+    if probability is None:
+        return base_name
+    return f"{base_name} ({probability * 100:.1f}%)"
+
+
 def _format_refresh(value: str | datetime | None) -> str:
     if value is None:
         return "unknown"
@@ -413,7 +434,7 @@ def build_live_games_embeds(
             for key in _tracked_identity_keys(row):
                 tracked_rows_by_identity[key] = row
         embed.add_field(
-            name="Team 🔵",
+            name=_team_field_name("Team 🔵", primary_row, BLUE_TEAM_ID),
             value=_team_value(
                 participants,
                 BLUE_TEAM_ID,
@@ -425,7 +446,7 @@ def build_live_games_embeds(
             inline=True,
         )
         embed.add_field(
-            name="Team 🔴",
+            name=_team_field_name("Team 🔴", primary_row, RED_TEAM_ID),
             value=_team_value(
                 participants,
                 RED_TEAM_ID,

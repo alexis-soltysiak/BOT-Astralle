@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import math
+import random
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -13,6 +17,8 @@ from app.features.leaderboards.schemas import RankedStateOut
 from app.features.live_games.local_champion_map import load_local_champion_map
 from app.features.live_games.repository import LiveGamesRepository
 from app.features.live_games.schemas import LiveGameOut
+from app.features.matches.models import Match
+from app.features.scoring.models import MatchScore
 from app.features.tracked_players.repository import TrackedPlayersRepository
 from app.infra.riot_client import RiotClient
 
@@ -28,6 +34,32 @@ CHAMPION_SUMMARY_URL = (
 _LOCAL_CHAMPION_MAP = load_local_champion_map()
 _CHAMPION_CACHE: dict[int, dict[str, str]] = {}
 _CHAMPION_CACHE_EXPIRES_AT: datetime | None = None
+_PREDICTION_CACHE: dict[str, dict[str, object]] = {}
+_PREDICTION_CACHE_TTL_SECONDS = 600
+_PREDICTION_MODEL_VERSION = "v1_weighted10_elo_lp"
+_TEAM_IDS = (100, 200)
+_BLUE_TEAM_ID = 100
+_RED_TEAM_ID = 200
+_RECENT_MATCH_LIMIT = 10
+_RECENT_SCORE_WEIGHTS = [1.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+_LAST3_RECENCY_MULTIPLIER = 1.35
+_SCORE_COMPONENT_WEIGHT = 0.7
+_ELO_COMPONENT_WEIGHT = 0.3
+_PLAYER_BASELINE_SKILL = 0.5
+_MAX_LP_NORMALIZER = 4400.0
+_TIER_TO_INDEX = {
+    "IRON": 0,
+    "BRONZE": 1,
+    "SILVER": 2,
+    "GOLD": 3,
+    "PLATINUM": 4,
+    "EMERALD": 5,
+    "DIAMOND": 6,
+    "MASTER": 7,
+    "GRANDMASTER": 8,
+    "CHALLENGER": 9,
+}
+_DIVISION_TO_OFFSET = {"IV": 0, "III": 100, "II": 200, "I": 300}
 
 
 def _state_from_snapshot(queue_type: str, snapshot: RankedSnapshot | None) -> RankedStateOut:
@@ -47,6 +79,75 @@ def _safe_int(value) -> int | None:  # type: ignore[no-untyped-def]
         return int(value)
     except Exception:
         return None
+
+
+def _safe_float(value) -> float | None:  # type: ignore[no-untyped-def]
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(value, upper))
+
+
+def _sigmoid(value: float) -> float:
+    return 1.0 / (1.0 + math.exp(-value))
+
+
+def _recent_weighted_score(scores: list[float]) -> float | None:
+    if not scores:
+        return None
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for index, score in enumerate(scores[:_RECENT_MATCH_LIMIT]):
+        weight = _RECENT_SCORE_WEIGHTS[index] if index < len(_RECENT_SCORE_WEIGHTS) else _RECENT_SCORE_WEIGHTS[-1]
+        if index < 3:
+            weight *= _LAST3_RECENCY_MULTIPLIER
+        weighted_sum += score * weight
+        total_weight += weight
+    if total_weight <= 0:
+        return None
+    return weighted_sum / total_weight
+
+
+def _lp_total_from_ranked_state(ranked_state: dict | None) -> int | None:
+    if not isinstance(ranked_state, dict):
+        return None
+    tier = str(ranked_state.get("tier") or "").strip().upper()
+    if not tier:
+        return None
+    tier_index = _TIER_TO_INDEX.get(tier)
+    if tier_index is None:
+        return None
+    lp_value = _safe_int(ranked_state.get("league_points"))
+    if lp_value is None:
+        return None
+    division = str(ranked_state.get("division") or "").strip().upper()
+    division_offset = _DIVISION_TO_OFFSET.get(division, 0)
+    if tier in {"MASTER", "GRANDMASTER", "CHALLENGER"}:
+        division_offset = 0
+    return tier_index * 400 + division_offset + lp_value
+
+
+def _normalized_elo_component(total_lp: int | None) -> float | None:
+    if total_lp is None:
+        return None
+    return _clamp(total_lp / _MAX_LP_NORMALIZER, 0.0, 1.0)
+
+
+def _player_skill_value(weighted_score: float | None, elo_component: float | None, games_count: int) -> float:
+    score_component = None if weighted_score is None else _clamp(weighted_score / 100.0, 0.0, 1.0)
+    raw = _PLAYER_BASELINE_SKILL
+    if score_component is not None and elo_component is not None:
+        raw = _SCORE_COMPONENT_WEIGHT * score_component + _ELO_COMPONENT_WEIGHT * elo_component
+    elif score_component is not None:
+        raw = score_component
+    elif elo_component is not None:
+        raw = elo_component
+    confidence = _clamp(games_count / float(_RECENT_MATCH_LIMIT), 0.0, 1.0)
+    return _PLAYER_BASELINE_SKILL + (raw - _PLAYER_BASELINE_SKILL) * confidence
 
 
 def _ranked_state_from_entry(queue_type: str, entry: dict | None) -> dict:
@@ -146,6 +247,158 @@ class LiveGamesService:
         self._leaderboards_repo = leaderboards_repo or LeaderboardsRepository()
         self._log = structlog.get_logger("live_games")
 
+    async def _recent_scores_for_puuid(self, session: AsyncSession, puuid: str, limit: int = _RECENT_MATCH_LIMIT) -> list[float]:
+        stmt = (
+            select(MatchScore.final_score)
+            .join(Match, Match.id == MatchScore.match_id)
+            .where(MatchScore.puuid == puuid)
+            .order_by(Match.created_at.desc())
+            .limit(limit)
+        )
+        res = await session.execute(stmt)
+        values: list[float] = []
+        for row in res.all():
+            score = _safe_float(row[0])
+            if score is None:
+                continue
+            values.append(score)
+        return values
+
+    def _participant_display_name(self, participant: dict) -> str:
+        riot_id = str(participant.get("riotId") or "").strip()
+        if riot_id:
+            return riot_id
+        game_name = str(participant.get("riotIdGameName") or "").strip()
+        tag_line = str(participant.get("riotIdTagline") or "").strip()
+        if game_name and tag_line:
+            return f"{game_name}#{tag_line}"
+        if game_name:
+            return game_name
+        summoner_name = str(participant.get("summonerName") or "").strip()
+        if summoner_name:
+            return summoner_name
+        return "Unknown"
+
+    def _prediction_cache_key(self, game_id: str, participants: list[dict]) -> str:
+        pairs: list[str] = []
+        for participant in participants:
+            if not isinstance(participant, dict):
+                continue
+            puuid = str(participant.get("puuid") or "").strip()
+            team_id = _safe_int(participant.get("teamId"))
+            if puuid and team_id in _TEAM_IDS:
+                pairs.append(f"{team_id}:{puuid}")
+        pairs.sort()
+        return f"{game_id}|{'|'.join(pairs)}"
+
+    async def _compute_prediction_for_game(
+        self,
+        *,
+        session: AsyncSession,
+        game_id: str,
+        payload: dict,
+    ) -> dict | None:
+        participants = payload.get("participants")
+        if not isinstance(participants, list) or not participants:
+            return None
+
+        cache_key = self._prediction_cache_key(game_id, participants)
+        now = datetime.now(timezone.utc)
+        cached = _PREDICTION_CACHE.get(cache_key)
+        if isinstance(cached, dict):
+            expires_at = cached.get("expires_at")
+            if isinstance(expires_at, datetime) and now < expires_at:
+                prediction = cached.get("prediction")
+                if isinstance(prediction, dict):
+                    return prediction
+
+        sem = asyncio.Semaphore(4)
+
+        async def _one(participant: dict) -> dict | None:
+            if not isinstance(participant, dict):
+                return None
+            puuid = str(participant.get("puuid") or "").strip()
+            team_id = _safe_int(participant.get("teamId"))
+            if not puuid or team_id not in _TEAM_IDS:
+                return None
+            async with sem:
+                await asyncio.sleep(0.02 + random.random() * 0.03)
+                recent_scores = await self._recent_scores_for_puuid(session, puuid)
+            weighted_score = _recent_weighted_score(recent_scores)
+            lp_total = _lp_total_from_ranked_state(participant.get("rankedState"))
+            elo_component = _normalized_elo_component(lp_total)
+            skill = _player_skill_value(weighted_score, elo_component, len(recent_scores))
+            return {
+                "puuid": puuid,
+                "player_name": self._participant_display_name(participant),
+                "team_id": team_id,
+                "games_count": len(recent_scores),
+                "recent_scores": [round(value, 2) for value in recent_scores],
+                "weighted_recent_score": None if weighted_score is None else round(weighted_score, 2),
+                "elo_lp_total": lp_total,
+                "elo_component": None if elo_component is None else round(elo_component, 4),
+                "skill_value": round(skill, 4),
+            }
+
+        raw_players = await asyncio.gather(*(_one(participant) for participant in participants))
+        player_rows = [row for row in raw_players if isinstance(row, dict)]
+        if not player_rows:
+            return None
+
+        team_values: dict[int, list[float]] = {_BLUE_TEAM_ID: [], _RED_TEAM_ID: []}
+        for row in player_rows:
+            team_id = _safe_int(row.get("team_id"))
+            if team_id in _TEAM_IDS:
+                team_values[team_id].append(float(row.get("skill_value") or _PLAYER_BASELINE_SKILL))
+
+        if not team_values[_BLUE_TEAM_ID] and not team_values[_RED_TEAM_ID]:
+            return None
+
+        blue_strength = (
+            sum(team_values[_BLUE_TEAM_ID]) / max(1, len(team_values[_BLUE_TEAM_ID]))
+            if team_values[_BLUE_TEAM_ID]
+            else _PLAYER_BASELINE_SKILL
+        )
+        red_strength = (
+            sum(team_values[_RED_TEAM_ID]) / max(1, len(team_values[_RED_TEAM_ID]))
+            if team_values[_RED_TEAM_ID]
+            else _PLAYER_BASELINE_SKILL
+        )
+        # Smaller slope keeps V1 conservative when team data is incomplete.
+        blue_prob = _clamp(_sigmoid((blue_strength - red_strength) * 6.0), 0.05, 0.95)
+        red_prob = 1.0 - blue_prob
+
+        prediction = {
+            "model_version": _PREDICTION_MODEL_VERSION,
+            "computed_at": now.isoformat(),
+            "cache_ttl_seconds": _PREDICTION_CACHE_TTL_SECONDS,
+            "formula": "team_skill=avg(player_skill), player_skill=blend(weighted_recent_score, elo_lp), prob=sigmoid(diff)",
+            "weights": {
+                "recent_scores": _RECENT_SCORE_WEIGHTS,
+                "last3_multiplier": _LAST3_RECENCY_MULTIPLIER,
+                "score_component_weight": _SCORE_COMPONENT_WEIGHT,
+                "elo_component_weight": _ELO_COMPONENT_WEIGHT,
+            },
+            "team_blue": {
+                "team_id": _BLUE_TEAM_ID,
+                "strength": round(blue_strength, 4),
+                "win_probability": round(blue_prob, 4),
+                "players_count": len(team_values[_BLUE_TEAM_ID]),
+            },
+            "team_red": {
+                "team_id": _RED_TEAM_ID,
+                "strength": round(red_strength, 4),
+                "win_probability": round(red_prob, 4),
+                "players_count": len(team_values[_RED_TEAM_ID]),
+            },
+            "players": player_rows,
+        }
+        _PREDICTION_CACHE[cache_key] = {
+            "expires_at": now + timedelta(seconds=_PREDICTION_CACHE_TTL_SECONDS),
+            "prediction": prediction,
+        }
+        return prediction
+
     async def _fetch_active_game_with_fallback(
         self,
         *,
@@ -222,30 +475,44 @@ class LiveGamesService:
                 self._log.exception("live_game_champion_map_fetch_failed")
 
         entries_by_puuid: dict[str, list[dict]] = {}
+        unique_puuids: list[str] = []
+        seen: set[str] = set()
         for participant in participants:
             if not isinstance(participant, dict):
                 continue
             puuid = str(participant.get("puuid") or "").strip()
-            if not puuid or puuid in entries_by_puuid:
+            if not puuid or puuid in seen:
                 continue
-            try:
-                entries = await client.get_league_entries_by_puuid(platform, puuid)
-            except httpx.HTTPStatusError as e:
-                self._log.warning(
-                    "live_game_participant_rank_http_error",
-                    status=e.response.status_code,
-                    puuid=puuid,
-                    platform=platform,
-                )
-                entries = []
-            except Exception:
-                self._log.exception(
-                    "live_game_participant_rank_fetch_failed",
-                    puuid=puuid,
-                    platform=platform,
-                )
-                entries = []
-            entries_by_puuid[puuid] = [entry for entry in entries if isinstance(entry, dict)]
+            seen.add(puuid)
+            unique_puuids.append(puuid)
+
+        sem = asyncio.Semaphore(4)
+
+        async def _fetch_entries_for_puuid(puuid: str) -> tuple[str, list[dict]]:
+            async with sem:
+                await asyncio.sleep(0.03 + random.random() * 0.04)
+                try:
+                    entries = await client.get_league_entries_by_puuid(platform, puuid)
+                except httpx.HTTPStatusError as e:
+                    self._log.warning(
+                        "live_game_participant_rank_http_error",
+                        status=e.response.status_code,
+                        puuid=puuid,
+                        platform=platform,
+                    )
+                    entries = []
+                except Exception:
+                    self._log.exception(
+                        "live_game_participant_rank_fetch_failed",
+                        puuid=puuid,
+                        platform=platform,
+                    )
+                    entries = []
+            cleaned = [entry for entry in entries if isinstance(entry, dict)]
+            return puuid, cleaned
+
+        fetched = await asyncio.gather(*(_fetch_entries_for_puuid(puuid) for puuid in unique_puuids))
+        entries_by_puuid = {puuid: entries for puuid, entries in fetched}
 
         enriched_participants: list[dict] = []
         for participant in participants:
@@ -393,6 +660,28 @@ class LiveGamesService:
             player_snapshots[snapshot.queue_type] = snapshot
 
         states = await self._repo.list_states(session)
+        prediction_by_game_id: dict[str, dict] = {}
+        game_payloads: dict[str, dict] = {}
+        for state in states:
+            if state.status != "live" or not state.game_id:
+                continue
+            payload = state.payload if isinstance(state.payload, dict) else None
+            if payload is None or state.game_id in game_payloads:
+                continue
+            game_payloads[state.game_id] = payload
+
+        if game_payloads:
+            tasks = [
+                self._compute_prediction_for_game(session=session, game_id=game_id, payload=payload)
+                for game_id, payload in game_payloads.items()
+            ]
+            predictions = await asyncio.gather(*tasks)
+            prediction_by_game_id = {
+                game_id: prediction
+                for game_id, prediction in zip(game_payloads.keys(), predictions, strict=False)
+                if isinstance(prediction, dict)
+            }
+
         out: list[LiveGameOut] = []
         for s in states:
             p = players_by_id.get(str(s.tracked_player_id))
@@ -413,6 +702,7 @@ class LiveGamesService:
                     game_id=s.game_id,
                     payload=s.payload,
                     fetched_at=s.fetched_at,
+                    win_prediction=prediction_by_game_id.get(s.game_id) if s.game_id else None,
                     solo=_state_from_snapshot(QUEUE_SOLO, player_snaps.get(QUEUE_SOLO)),
                     flex=_state_from_snapshot(QUEUE_FLEX, player_snaps.get(QUEUE_FLEX)),
                 )

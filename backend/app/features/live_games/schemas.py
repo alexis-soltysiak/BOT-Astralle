@@ -20,5 +20,6 @@ class LiveGameOut(BaseModel):
     game_id: str | None
     payload: dict | None
     fetched_at: datetime | None
+    win_prediction: dict | None = None
     solo: RankedStateOut
     flex: RankedStateOut

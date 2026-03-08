@@ -89,7 +89,8 @@ def build_daily_lp_recap_embed(payload: dict[str, Any]) -> discord.Embed:
     )
 
     positive_lines = [line for line in (_entry_line(item, True) for item in positives) if line]
-    negative_lines = [line for line in (_entry_line(item, False) for item in negatives) if line]
+    negatives_sorted = sorted(negatives, key=lambda item: _safe_int(item.get("lp_delta")) or 0, reverse=True)
+    negative_lines = [line for line in (_entry_line(item, False) for item in negatives_sorted) if line]
 
     embed.add_field(
         name="Most successful players",
