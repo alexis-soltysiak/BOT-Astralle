@@ -44,7 +44,87 @@ function sourceLabel(player: LiveGamePredictionPlayer): string {
 }
 
 function teamRows(prediction: LiveGameWinPrediction, teamId: number): LiveGamePredictionPlayer[] {
-  return prediction.players.filter((p) => p.team_id === teamId);
+  return prediction.players
+    .filter((p) => p.team_id === teamId)
+    .sort((a, b) => b.skill_value - a.skill_value);
+}
+
+function hasSignal(player: LiveGamePredictionPlayer): boolean {
+  return player.weighted_recent_score !== null || player.elo_component !== null;
+}
+
+function contribution(player: LiveGamePredictionPlayer): string {
+  if (!hasSignal(player)) return "Excluded";
+  return player.skill_value.toFixed(4);
+}
+
+function TeamAnalysisTable({
+  teamName,
+  teamColor,
+  strength,
+  winProbability,
+  rows,
+}: {
+  teamName: string;
+  teamColor: "blue" | "red";
+  strength: number;
+  winProbability: number;
+  rows: LiveGamePredictionPlayer[];
+}) {
+  const accent =
+    teamColor === "blue"
+      ? "border-cyan-300/25 bg-cyan-300/5 text-cyan-100"
+      : "border-rose-300/25 bg-rose-300/5 text-rose-100";
+
+  const included = rows.filter((row) => hasSignal(row)).length;
+  const excluded = rows.length - included;
+
+  return (
+    <div className={`rounded-xl border p-3 md:p-4 ${accent}`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold">
+          {teamName} | strength {strength.toFixed(4)} | win {pct(winProbability)}
+        </div>
+        <div className="flex gap-2 text-[11px]">
+          <Badge variant="secondary">included {included}</Badge>
+          <Badge variant="secondary">excluded {excluded}</Badge>
+        </div>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Player</TableHead>
+            <TableHead>Tracked</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Games</TableHead>
+            <TableHead>Score</TableHead>
+            <TableHead>ELO</TableHead>
+            <TableHead>Signal</TableHead>
+            <TableHead>Contribution</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((player) => {
+            const signal = hasSignal(player);
+            return (
+              <TableRow key={player.puuid}>
+                <TableCell className="max-w-[180px] truncate font-medium">{player.player_name}</TableCell>
+                <TableCell>{player.is_tracked ? "yes" : "no"}</TableCell>
+                <TableCell>{sourceLabel(player)}</TableCell>
+                <TableCell>{gamesLabel(player)}</TableCell>
+                <TableCell>{scoreLabel(player)}</TableCell>
+                <TableCell>{lpLabel(player)}</TableCell>
+                <TableCell>{signal ? "usable" : "missing"}</TableCell>
+                <TableCell className={signal ? "font-mono text-xs" : "text-xs text-slate-400"}>
+                  {contribution(player)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
 }
 
 export default function LiveGamesPage() {
@@ -204,50 +284,48 @@ export default function LiveGamesPage() {
           return (
             <Card key={gameId}>
               <CardHeader>
-                <CardTitle className="text-base">
-                  Game {gameId} - Blue {pct(prediction.team_blue.win_probability)} / Red{" "}
-                  {pct(prediction.team_red.win_probability)}
+                <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
+                  <span>Game {gameId}</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    Blue {pct(prediction.team_blue.win_probability)} vs Red{" "}
+                    {pct(prediction.team_red.win_probability)}
+                  </span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-xs text-slate-400">
-                  Modele: {prediction.model_version} | Formula: {prediction.formula}
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 text-xs text-slate-300 md:grid-cols-4">
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <div className="text-[11px] uppercase text-slate-400">Model</div>
+                    <div className="mt-1 font-medium">{prediction.model_version}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <div className="text-[11px] uppercase text-slate-400">Blue strength</div>
+                    <div className="mt-1 font-medium">{prediction.team_blue.strength.toFixed(4)}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <div className="text-[11px] uppercase text-slate-400">Red strength</div>
+                    <div className="mt-1 font-medium">{prediction.team_red.strength.toFixed(4)}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <div className="text-[11px] uppercase text-slate-400">Formula</div>
+                    <div className="mt-1 truncate font-medium">{prediction.formula}</div>
+                  </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-3">
-                    <div className="mb-2 text-sm font-semibold text-cyan-100">
-                      Team Blue | strength {prediction.team_blue.strength.toFixed(4)}
-                    </div>
-                    <div className="space-y-1 text-xs">
-                      {blueRows.map((player) => (
-                        <div key={player.puuid} className="flex justify-between gap-2">
-                          <span className="truncate">{player.player_name}</span>
-                          <span>
-                            skill {player.skill_value.toFixed(4)} | score {scoreLabel(player)} | elo {lpLabel(player)} |
-                            games {gamesLabel(player)} | src {sourceLabel(player)}
-                            {player.is_tracked ? " | tracked" : ""}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-rose-300/20 bg-rose-300/5 p-3">
-                    <div className="mb-2 text-sm font-semibold text-rose-100">
-                      Team Red | strength {prediction.team_red.strength.toFixed(4)}
-                    </div>
-                    <div className="space-y-1 text-xs">
-                      {redRows.map((player) => (
-                        <div key={player.puuid} className="flex justify-between gap-2">
-                          <span className="truncate">{player.player_name}</span>
-                          <span>
-                            skill {player.skill_value.toFixed(4)} | score {scoreLabel(player)} | elo {lpLabel(player)} |
-                            games {gamesLabel(player)} | src {sourceLabel(player)}
-                            {player.is_tracked ? " | tracked" : ""}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <TeamAnalysisTable
+                    teamName="Team Blue"
+                    teamColor="blue"
+                    strength={prediction.team_blue.strength}
+                    winProbability={prediction.team_blue.win_probability}
+                    rows={blueRows}
+                  />
+                  <TeamAnalysisTable
+                    teamName="Team Red"
+                    teamColor="red"
+                    strength={prediction.team_red.strength}
+                    winProbability={prediction.team_red.win_probability}
+                    rows={redRows}
+                  />
                 </div>
               </CardContent>
             </Card>

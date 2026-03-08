@@ -424,6 +424,7 @@ class LiveGamesService:
             weighted_score = _recent_weighted_score(recent_scores)
             lp_total = _lp_total_from_ranked_state(participant.get("rankedState"))
             elo_component = _normalized_elo_component(lp_total)
+            has_signal = weighted_score is not None or elo_component is not None
             skill = _player_skill_value(weighted_score, elo_component, len(recent_scores))
             games_count = len(recent_scores)
             if not is_tracked and games_count == 0:
@@ -440,6 +441,7 @@ class LiveGamesService:
                 "elo_lp_total": lp_total,
                 "elo_component": None if elo_component is None else round(elo_component, 4),
                 "skill_value": round(skill, 4),
+                "has_signal": has_signal,
             }
 
         raw_players = await asyncio.gather(*(_one(participant) for participant in participants))
@@ -450,7 +452,8 @@ class LiveGamesService:
         team_values: dict[int, list[float]] = {_BLUE_TEAM_ID: [], _RED_TEAM_ID: []}
         for row in player_rows:
             team_id = _safe_int(row.get("team_id"))
-            if team_id in _TEAM_IDS:
+            has_signal = bool(row.get("has_signal"))
+            if team_id in _TEAM_IDS and has_signal:
                 team_values[team_id].append(float(row.get("skill_value") or _PLAYER_BASELINE_SKILL))
 
         if not team_values[_BLUE_TEAM_ID] and not team_values[_RED_TEAM_ID]:
