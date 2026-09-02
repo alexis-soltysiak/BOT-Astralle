@@ -198,17 +198,20 @@ def register(
     """Scope la commande sur DISCORD_GUILD_ID quand il est renseigne.
 
     Une commande de guild est publiee instantanement, la ou une commande
-    globale peut mettre jusqu'a une heure a se propager. Sans guild_id, on
-    retombe sur un enregistrement global.
-    """
-    guild_decorator = (
-        app_commands.guilds(discord.Object(id=guild_id))
-        if guild_id is not None
-        else (lambda command: command)
-    )
+    globale peut mettre jusqu'a une heure a se propager.
 
-    @guild_decorator
-    @tree.command(name="lisnard", description="David Lisnard donne son avis sur la conversation")
+    Le scope se passe par le parametre `guild` de tree.command, et surtout PAS
+    par un decorateur @app_commands.guilds place au-dessus : tree.command
+    enregistre la commande dans l'arbre des qu'il s'applique, donc un
+    decorateur pose au-dessus arrive trop tard et la commande part en global.
+    """
+    scope: dict = {} if guild_id is None else {"guild": discord.Object(id=guild_id)}
+
+    @tree.command(
+        name="lisnard",
+        description="David Lisnard donne son avis sur la conversation",
+        **scope,
+    )
     async def lisnard_command(interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
 

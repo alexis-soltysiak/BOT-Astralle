@@ -265,3 +265,41 @@ def test_persona_keeps_the_tone_light() -> None:
     assert "autodérision" in persona
     assert "affiche" in persona  # regle anti-slogan de campagne
     assert "la plupart du temps, tu déconnes" in persona
+
+
+def _tree() -> tuple:
+    import discord
+    from discord import app_commands
+
+    from app.features.lisnard.commands import register
+
+    client = discord.Client(intents=discord.Intents.default())
+    return discord, app_commands.CommandTree(client), register
+
+
+class _StubLisnard:
+    enabled = True
+
+    async def generate(self, transcript: str) -> str:
+        return "x"
+
+
+def test_command_is_scoped_to_the_guild_not_global() -> None:
+    """Regression : un @app_commands.guilds pose AU-DESSUS de @tree.command
+    arrive trop tard et la commande part en global. Le scope doit passer par
+    le parametre guild= de tree.command."""
+    discord, tree, register = _tree()
+
+    register(tree, _StubLisnard(), guild_id=1280249034740858890)  # type: ignore[arg-type]
+
+    guild_commands = tree.get_commands(guild=discord.Object(id=1280249034740858890))
+    assert [c.name for c in guild_commands] == ["lisnard"]
+    assert [c.name for c in tree.get_commands()] == []
+
+
+def test_command_is_global_without_a_guild_id() -> None:
+    _discord, tree, register = _tree()
+
+    register(tree, _StubLisnard(), guild_id=None)  # type: ignore[arg-type]
+
+    assert [c.name for c in tree.get_commands()] == ["lisnard"]
