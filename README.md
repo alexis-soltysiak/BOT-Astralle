@@ -77,8 +77,16 @@ Services exposes :
 
 ## Commandes de personnages
 
-`/lisnard` et `/melenchon` font reagir un pastiche de David Lisnard ou de
-Jean-Luc Melenchon au dernier message du salon.
+Six personnalites disposent chacune de leur commande : `/lisnard`,
+`/melenchon`, `/tondelier`, `/lepen`, `/knafo` et `/panot`. Chacune fait reagir
+un pastiche de la personne au dernier message du salon.
+
+`/sphere <nombre>` fait intervenir plusieurs d'entre elles a la suite. Le
+plateau est tire au sort a chaque appel, les prises de parole sont espacees de
+5 secondes, et chaque intervenant voit ce que les precedents ont dit : il ne
+repete pas, il repond ou change d'angle. Pour limiter la consommation, ce mode
+lit moins de messages (12 au lieu de 25) et coupe la recherche web, dont la
+seule definition d'outil coute plus de tokens que la fiche d'un personnage.
 
 La commande lit les 25 derniers messages. Elle en extrait aussi le contenu des
 liens (embeds Twitter/X, articles, videos), les pieces jointes, et le fil des

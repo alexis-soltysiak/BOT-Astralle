@@ -55,6 +55,27 @@ def build_input(transcript: str) -> str:
     return f"{_TASK_INSTRUCTIONS}\n\n--- salon Discord ---\n{transcript}"
 
 
+def with_prior_replies(transcript: str, replies: list[tuple[str, str]]) -> str:
+    """Ajoute au contexte ce que les personnages precedents viennent de dire.
+
+    Utilise par la commande de groupe : tout le monde reagit au meme message
+    declencheur, mais chacun voit les prises de parole qui l'ont precede. C'est
+    ce qui evite des reponses interchangeables et cree un vrai debat, pour un
+    cout en tokens negligeable (quelques dizaines de mots).
+    """
+    if not replies:
+        return transcript
+    said = "\n".join(f"{name}: {text}" for name, text in replies)
+    return (
+        f"{transcript}\n\n"
+        "--- ont deja reagi juste avant toi, dans l'ordre ---\n"
+        f"{said}\n\n"
+        "Tu parles apres eux. Ne repete pas ce qui vient d'etre dit et ne le "
+        "reformule pas autrement : prends un autre angle, ou reponds "
+        "directement a l'un d'eux en le nommant."
+    )
+
+
 def _extract_text(payload: dict) -> str | None:
     direct = payload.get("output_text")
     if isinstance(direct, str) and direct.strip():
@@ -120,8 +141,8 @@ class PersonaClient:
         if self._client is not None:
             await self._client.aclose()
 
-    def _build_tools(self) -> list[dict]:
-        if not self._web_search_enabled:
+    def _build_tools(self, web_search: bool) -> list[dict]:
+        if not web_search:
             return []
         return [
             {
@@ -135,7 +156,13 @@ class PersonaClient:
             }
         ]
 
-    async def generate(self, persona: Persona, transcript: str) -> str | None:
+    async def generate(
+        self,
+        persona: Persona,
+        transcript: str,
+        *,
+        web_search: bool | None = None,
+    ) -> str | None:
         if self._client is None or not self._model:
             return None
 
@@ -151,7 +178,8 @@ class PersonaClient:
         }
         if self._reasoning_effort and self._reasoning_effort != "none":
             body["reasoning"] = {"effort": self._reasoning_effort}
-        tools = self._build_tools()
+        allow_search = self._web_search_enabled if web_search is None else web_search
+        tools = self._build_tools(allow_search)
         if tools:
             body["tools"] = tools
 

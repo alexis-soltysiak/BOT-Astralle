@@ -298,7 +298,8 @@ def test_command_is_scoped_to_the_guild_not_global() -> None:
     register(tree, _StubClient(), guild_id=1280249034740858890)  # type: ignore[arg-type]
 
     guild_commands = tree.get_commands(guild=discord.Object(id=1280249034740858890))
-    assert sorted(c.name for c in guild_commands) == ["lisnard", "melenchon"]
+    expected = sorted([p.command for p in PERSONAS] + ["sphere"])
+    assert sorted(c.name for c in guild_commands) == expected
     assert [c.name for c in tree.get_commands()] == []
 
 
@@ -307,15 +308,18 @@ def test_command_is_global_without_a_guild_id() -> None:
 
     register(tree, _StubClient(), guild_id=None)  # type: ignore[arg-type]
 
-    assert sorted(c.name for c in tree.get_commands()) == ["lisnard", "melenchon"]
+    expected = sorted([p.command for p in PERSONAS] + ["sphere"])
+    assert sorted(c.name for c in tree.get_commands()) == expected
 
 
-def test_registry_exposes_both_personas() -> None:
+def test_registry_is_coherent() -> None:
     keys = [p.key for p in PERSONAS]
 
-    assert keys == ["lisnard", "melenchon"]
+    assert len(PERSONAS) >= 2
     assert [p.command for p in PERSONAS] == keys  # la commande porte la cle
-    assert len({p.command for p in PERSONAS}) == len(PERSONAS)  # pas de doublon
+    assert len(set(keys)) == len(keys)  # pas de doublon
+    assert "sphere" not in keys  # ne doit pas entrer en collision avec /sphere
+    assert len({p.display_name for p in PERSONAS}) == len(PERSONAS)
 
 
 def test_every_persona_has_a_readable_prompt_and_avatar() -> None:
@@ -356,3 +360,45 @@ def test_clean_reply_strips_each_persona_own_name() -> None:
     assert clean_reply("Mélenchon — bref.", "Jean-Luc Mélenchon") == "bref."
     # le nom d'un autre personnage ne doit pas etre retire
     assert clean_reply("Lisnard a tort.", "Jean-Luc Mélenchon") == "Lisnard a tort."
+
+
+def test_pick_panel_returns_distinct_personas() -> None:
+    from app.features.personas.commands import pick_panel
+
+    panel = pick_panel(4)
+
+    assert len(panel) == 4
+    assert len({p.key for p in panel}) == 4
+
+
+def test_pick_panel_is_capped_by_the_registry_size() -> None:
+    from app.features.personas.commands import pick_panel
+
+    assert len(pick_panel(99)) == len(PERSONAS)
+    assert pick_panel(0) == []
+
+
+def test_pick_panel_order_actually_varies() -> None:
+    """L'ordre doit changer d'un appel a l'autre, sinon c'est toujours le meme show."""
+    from app.features.personas.commands import pick_panel
+
+    seen = {tuple(p.key for p in pick_panel(len(PERSONAS))) for _ in range(40)}
+
+    assert len(seen) > 1
+
+
+def test_with_prior_replies_is_a_noop_without_replies() -> None:
+    from app.features.personas.client import with_prior_replies
+
+    assert with_prior_replies("alex: yo", []) == "alex: yo"
+
+
+def test_with_prior_replies_appends_what_was_already_said() -> None:
+    from app.features.personas.client import with_prior_replies
+
+    out = with_prior_replies("alex: yo", [("David Lisnard", "Non."), ("Sarah Knafo", "12 %.")])
+
+    assert out.startswith("alex: yo")
+    assert "David Lisnard: Non." in out
+    assert "Sarah Knafo: 12 %." in out
+    assert "Ne repete pas" in out
