@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4.1-mini"
     llm_timeout_seconds: float = 12.0
 
+    lisnard_enabled: bool = True
+    lisnard_model: str = "gpt-5.6"
+    lisnard_history_limit: int = 25
+    lisnard_timeout_seconds: float = 120.0
+    lisnard_web_search_enabled: bool = True
+    lisnard_max_output_tokens: int = 32000
+    lisnard_reasoning_effort: str = "low"
+
 
 @lru_cache
 def get_settings() -> Settings:

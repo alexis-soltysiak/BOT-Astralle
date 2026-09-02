@@ -75,6 +75,35 @@ Services exposes :
 - postgres : `localhost:5432`
 - redis : `localhost:6379`
 
+## Commande /lisnard
+
+`/lisnard` fait reagir un pastiche de David Lisnard au dernier message du salon.
+La commande lit les 25 derniers messages. Elle en extrait aussi le contenu des
+liens (embeds Twitter/X, articles, videos), les pieces jointes, et le fil des
+reponses Discord pour qu'un message comme "ca revient au meme ?" reste
+comprehensible. Le modele peut chercher sur le web si le sujet le demande. La reponse est postee comme un message normal dans le salon.
+
+La personnalite vit dans `discord/app/features/lisnard/persona.md` : c'est ce
+fichier qu'il faut editer pour ajuster le ton, les positions ou la longueur des
+reponses. Aucun redeploiement de code n'est necessaire au-dela d'un rebuild.
+
+Prerequis important : la commande a besoin du **Message Content Intent**, active
+dans le Discord Developer Portal (Applications > ton app > Bot > Privileged
+Gateway Intents). Sans lui, `discord.py` refuse de se connecter au demarrage et
+le bot entier ne tourne plus. Si tu ne peux pas l'activer, mets
+`LISNARD_ENABLED=false` : le bot redemarre alors sans demander cet intent.
+
+Variables associees :
+
+- `LISNARD_ENABLED` : coupe la commande et l'intent privilegie
+- `LISNARD_MODEL` : modele OpenAI utilise (defaut `gpt-5.6`)
+- `LISNARD_HISTORY_LIMIT` : nombre de messages lus (defaut 25)
+- `LISNARD_WEB_SEARCH_ENABLED` : autorise la recherche web
+- `LISNARD_MAX_OUTPUT_TOKENS` : plafond qui couvre aussi les tokens de raisonnement
+- `LISNARD_REASONING_EFFORT` : `minimal`, `low`, `medium` ou `high`
+
+La cle utilisee est `LLM_API_KEY`, partagee avec l'analyse de match.
+
 ## Deploiement et securite
 
 Voir [docs/deployment-security-checklist.md](docs/deployment-security-checklist.md) pour la checklist GitHub + VM, la configuration des URLs publiques et les recommandations de securisation backend/frontend/Discord/Postgres/Redis.
