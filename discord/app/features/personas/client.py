@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import httpx
 import structlog
 
-_PERSONA_PATH = Path(__file__).with_name("persona.md")
+from app.features.personas.registry import Persona
 
 _TASK_INSTRUCTIONS = """
 Tu viens d'ouvrir le salon Discord ci-dessous. Les messages sont donnes du plus
@@ -42,13 +40,15 @@ deconnes. Ne transforme pas une vanne en tribune politique et ne place une
 vraie position que si le sujet la reclame vraiment. Si ta phrase pourrait finir
 sur une affiche de campagne, trouve autre chose.
 
+Il se peut qu'une autre personnalite politique soit deja intervenue dans le
+salon plus haut. Traite-la comme n'importe quel autre participant : tu peux
+lui repondre, la contredire ou la vanner directement, exactement comme tu le
+ferais en plateau. Ne fais jamais semblant de ne pas la voir, et ne commente
+jamais le fait qu'elle soit la.
+
 Ecris uniquement le message que tu postes dans le salon. Rien d'autre : pas de
 guillemets autour, pas de nom devant, pas de commentaire.
 """.strip()
-
-
-def load_persona() -> str:
-    return _PERSONA_PATH.read_text(encoding="utf-8").strip()
 
 
 def build_input(transcript: str) -> str:
@@ -82,7 +82,7 @@ def _extract_text(payload: dict) -> str | None:
     return joined or None
 
 
-class LisnardClient:
+class PersonaClient:
     def __init__(
         self,
         *,
@@ -100,7 +100,7 @@ class LisnardClient:
         self._web_search_enabled = web_search_enabled
         self._max_output_tokens = max_output_tokens
         self._reasoning_effort = reasoning_effort.strip().lower()
-        self._log = structlog.get_logger("lisnard")
+        self._log = structlog.get_logger("personas")
         self._client: httpx.AsyncClient | None = None
         if self._enabled:
             self._client = httpx.AsyncClient(
@@ -135,7 +135,7 @@ class LisnardClient:
             }
         ]
 
-    async def generate(self, transcript: str) -> str | None:
+    async def generate(self, persona: Persona, transcript: str) -> str | None:
         if self._client is None or not self._model:
             return None
 
@@ -145,7 +145,7 @@ class LisnardClient:
         # reelle du message est bornee par la persona, pas par ce chiffre.
         body: dict = {
             "model": self._model,
-            "instructions": load_persona(),
+            "instructions": persona.load_prompt(),
             "input": build_input(transcript),
             "max_output_tokens": self._max_output_tokens,
         }
@@ -159,13 +159,13 @@ class LisnardClient:
             response = await self._client.post("/responses", json=body)
             response.raise_for_status()
         except Exception as e:
-            self._log.warning("lisnard_request_failed", error=str(e))
+            self._log.warning("persona_request_failed", persona=persona.key, error=str(e))
             return None
 
         try:
             payload = response.json()
         except Exception as e:
-            self._log.warning("lisnard_parse_failed", error=str(e))
+            self._log.warning("persona_parse_failed", persona=persona.key, error=str(e))
             return None
 
         text = _extract_text(payload)
@@ -177,7 +177,8 @@ class LisnardClient:
         incomplete = payload.get("incomplete_details")
         usage = payload.get("usage") or {}
         self._log.warning(
-            "lisnard_empty_output",
+            "persona_empty_output",
+            persona=persona.key,
             status=status,
             reason=(incomplete or {}).get("reason") if isinstance(incomplete, dict) else None,
             output_tokens=usage.get("output_tokens"),

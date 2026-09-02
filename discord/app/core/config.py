@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
+
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,13 +34,31 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4.1-mini"
     llm_timeout_seconds: float = 12.0
 
-    lisnard_enabled: bool = True
-    lisnard_model: str = "gpt-5.6"
-    lisnard_history_limit: int = 25
-    lisnard_timeout_seconds: float = 120.0
-    lisnard_web_search_enabled: bool = True
-    lisnard_max_output_tokens: int = 32000
-    lisnard_reasoning_effort: str = "low"
+    # Les alias LISNARD_* sont conserves pour ne pas casser les .env deja
+    # deployes, qui datent d'avant l'ajout d'un second personnage.
+    persona_enabled: bool = Field(
+        True, validation_alias=AliasChoices("PERSONA_ENABLED", "LISNARD_ENABLED")
+    )
+    persona_model: str = Field(
+        "gpt-5.6-terra", validation_alias=AliasChoices("PERSONA_MODEL", "LISNARD_MODEL")
+    )
+    persona_history_limit: int = Field(
+        25, validation_alias=AliasChoices("PERSONA_HISTORY_LIMIT", "LISNARD_HISTORY_LIMIT")
+    )
+    persona_timeout_seconds: float = Field(
+        120.0, validation_alias=AliasChoices("PERSONA_TIMEOUT_SECONDS", "LISNARD_TIMEOUT_SECONDS")
+    )
+    persona_web_search_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices("PERSONA_WEB_SEARCH_ENABLED", "LISNARD_WEB_SEARCH_ENABLED"),
+    )
+    persona_max_output_tokens: int = Field(
+        32000,
+        validation_alias=AliasChoices("PERSONA_MAX_OUTPUT_TOKENS", "LISNARD_MAX_OUTPUT_TOKENS"),
+    )
+    persona_reasoning_effort: str = Field(
+        "low", validation_alias=AliasChoices("PERSONA_REASONING_EFFORT", "LISNARD_REASONING_EFFORT")
+    )
 
 
 @lru_cache

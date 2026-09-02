@@ -75,17 +75,38 @@ Services exposes :
 - postgres : `localhost:5432`
 - redis : `localhost:6379`
 
-## Commande /lisnard
+## Commandes de personnages
 
-`/lisnard` fait reagir un pastiche de David Lisnard au dernier message du salon.
+`/lisnard` et `/melenchon` font reagir un pastiche de David Lisnard ou de
+Jean-Luc Melenchon au dernier message du salon.
+
 La commande lit les 25 derniers messages. Elle en extrait aussi le contenu des
 liens (embeds Twitter/X, articles, videos), les pieces jointes, et le fil des
 reponses Discord pour qu'un message comme "ca revient au meme ?" reste
-comprehensible. Le modele peut chercher sur le web si le sujet le demande. La reponse est postee comme un message normal dans le salon.
+comprehensible. Le modele peut chercher sur le web si le sujet le demande. Les
+personnages se voient entre eux : si l'un a deja parle dans le salon, l'autre
+peut lui repondre directement.
 
-La personnalite vit dans `discord/app/features/lisnard/persona.md` : c'est ce
-fichier qu'il faut editer pour ajuster le ton, les positions ou la longueur des
-reponses. Aucun redeploiement de code n'est necessaire au-dela d'un rebuild.
+Chaque reponse est postee via un **webhook Discord** portant le nom et l'avatar
+du personnage, ce qui les fait apparaitre comme deux interlocuteurs distincts.
+Cela demande la permission **Manage Webhooks** sur le salon. Sans elle, la
+commande fonctionne quand meme mais retombe sur un message prefixe du nom, et
+le dit en ephemere a celui qui a lance la commande.
+
+### Ajouter un personnage
+
+Trois choses, aucune ligne de logique a ecrire :
+
+1. `discord/app/features/personas/profiles/<nom>.md` : la fiche de personnalite
+2. `discord/app/features/personas/avatars/<nom>.<ext>` : la photo
+3. une entree dans `PERSONAS`, dans `discord/app/features/personas/registry.py`
+
+La slash command, le webhook et les tests de coherence suivent automatiquement.
+Les fiches existantes servent de gabarit : chacune se termine par les memes
+garde-fous de ton (longueur, pas de markdown, autoderision, pas d'insulte), et
+un test verifie que tout nouveau personnage les porte aussi.
+
+### Reglages
 
 La commande est scopee sur `DISCORD_GUILD_ID` quand il est renseigne, ce qui la
 rend disponible instantanement apres un redemarrage. Sans cette variable elle
@@ -93,23 +114,25 @@ est enregistree en global, et Discord peut alors mettre jusqu'a une heure a la
 propager.
 
 Le bot a besoin sur chaque salon de View Channel, Read Message History et Send
-Messages. S'il lui en manque une, la commande repond en ephemere en disant
-laquelle plutot que d'echouer en silence.
+Messages, plus Manage Webhooks pour l'avatar.
 
-Prerequis important : la commande a besoin du **Message Content Intent**, active
-dans le Discord Developer Portal (Applications > ton app > Bot > Privileged
-Gateway Intents). Sans lui, `discord.py` refuse de se connecter au demarrage et
-le bot entier ne tourne plus. Si tu ne peux pas l'activer, mets
-`LISNARD_ENABLED=false` : le bot redemarre alors sans demander cet intent.
+Prerequis important : les commandes ont besoin du **Message Content Intent**,
+active dans le Discord Developer Portal (Applications > ton app > Bot >
+Privileged Gateway Intents). Sans lui, `discord.py` refuse de se connecter au
+demarrage et le bot entier ne tourne plus. Si tu ne peux pas l'activer, mets
+`PERSONA_ENABLED=false` : le bot redemarre alors sans demander cet intent.
 
 Variables associees :
 
-- `LISNARD_ENABLED` : coupe la commande et l'intent privilegie
-- `LISNARD_MODEL` : modele OpenAI utilise (defaut `gpt-5.6`)
-- `LISNARD_HISTORY_LIMIT` : nombre de messages lus (defaut 25)
-- `LISNARD_WEB_SEARCH_ENABLED` : autorise la recherche web
-- `LISNARD_MAX_OUTPUT_TOKENS` : plafond qui couvre aussi les tokens de raisonnement
-- `LISNARD_REASONING_EFFORT` : `minimal`, `low`, `medium` ou `high`
+- `PERSONA_ENABLED` : coupe les commandes et l'intent privilegie
+- `PERSONA_MODEL` : modele OpenAI utilise (defaut `gpt-5.6-terra`)
+- `PERSONA_HISTORY_LIMIT` : nombre de messages lus (defaut 25)
+- `PERSONA_WEB_SEARCH_ENABLED` : autorise la recherche web
+- `PERSONA_MAX_OUTPUT_TOKENS` : plafond qui couvre aussi les tokens de raisonnement
+- `PERSONA_REASONING_EFFORT` : `minimal`, `low`, `medium` ou `high`
+
+Les anciens noms `LISNARD_*` restent acceptes pour ne pas casser les `.env`
+deja deployes.
 
 La cle utilisee est `LLM_API_KEY`, partagee avec l'analyse de match.
 

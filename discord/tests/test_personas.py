@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.features.lisnard.client import _extract_text, build_input, load_persona
-from app.features.lisnard.commands import (
+from app.features.personas.client import _extract_text, build_input
+from app.features.personas.registry import PERSONAS
+from app.features.personas.transcript import (
     _LAST_MARKER,
     build_transcript,
     clean_reply,
     extract_message_text,
     reply_context,
 )
+
+
+def load_persona(key: str = "lisnard") -> str:
+    return next(p for p in PERSONAS if p.key == key).load_prompt()
 
 
 def make_embed(
@@ -186,8 +191,8 @@ def test_build_input_embeds_the_transcript_and_link_rule() -> None:
 
 
 def test_clean_reply_strips_character_name_prefix() -> None:
-    assert clean_reply("David Lisnard : on marche sur la tete.") == "on marche sur la tete."
-    assert clean_reply("Lisnard- bref.") == "bref."
+    assert clean_reply("David Lisnard : on marche sur la tete.", "David Lisnard") == "on marche sur la tete."
+    assert clean_reply("Lisnard- bref.", "David Lisnard") == "bref."
 
 
 def test_clean_reply_strips_wrapping_quotes() -> None:
@@ -271,16 +276,16 @@ def _tree() -> tuple:
     import discord
     from discord import app_commands
 
-    from app.features.lisnard.commands import register
+    from app.features.personas.commands import register
 
     client = discord.Client(intents=discord.Intents.default())
     return discord, app_commands.CommandTree(client), register
 
 
-class _StubLisnard:
+class _StubClient:
     enabled = True
 
-    async def generate(self, transcript: str) -> str:
+    async def generate(self, persona: object, transcript: str) -> str:
         return "x"
 
 
@@ -290,16 +295,64 @@ def test_command_is_scoped_to_the_guild_not_global() -> None:
     le parametre guild= de tree.command."""
     discord, tree, register = _tree()
 
-    register(tree, _StubLisnard(), guild_id=1280249034740858890)  # type: ignore[arg-type]
+    register(tree, _StubClient(), guild_id=1280249034740858890)  # type: ignore[arg-type]
 
     guild_commands = tree.get_commands(guild=discord.Object(id=1280249034740858890))
-    assert [c.name for c in guild_commands] == ["lisnard"]
+    assert sorted(c.name for c in guild_commands) == ["lisnard", "melenchon"]
     assert [c.name for c in tree.get_commands()] == []
 
 
 def test_command_is_global_without_a_guild_id() -> None:
     _discord, tree, register = _tree()
 
-    register(tree, _StubLisnard(), guild_id=None)  # type: ignore[arg-type]
+    register(tree, _StubClient(), guild_id=None)  # type: ignore[arg-type]
 
-    assert [c.name for c in tree.get_commands()] == ["lisnard"]
+    assert sorted(c.name for c in tree.get_commands()) == ["lisnard", "melenchon"]
+
+
+def test_registry_exposes_both_personas() -> None:
+    keys = [p.key for p in PERSONAS]
+
+    assert keys == ["lisnard", "melenchon"]
+    assert [p.command for p in PERSONAS] == keys  # la commande porte la cle
+    assert len({p.command for p in PERSONAS}) == len(PERSONAS)  # pas de doublon
+
+
+def test_every_persona_has_a_readable_prompt_and_avatar() -> None:
+    for persona in PERSONAS:
+        prompt = persona.load_prompt()
+        assert len(prompt) > 2000, persona.key
+
+        avatar = persona.load_avatar()
+        assert avatar is not None, persona.key
+        assert len(avatar) > 1000, persona.key
+
+
+def test_every_persona_carries_the_anti_cringe_rules() -> None:
+    """Les garde-fous de ton doivent exister pour chaque personnage, pas juste Lisnard."""
+    for persona in PERSONAS:
+        # les fichiers sont retailles a 79 colonnes : une phrase peut etre
+        # coupee par un retour a la ligne, donc on aplatit les espaces
+        prompt = " ".join(persona.load_prompt().lower().split())
+
+        assert "la plupart du temps, tu déconnes" in prompt, persona.key
+        assert "une seule idée par message" in prompt, persona.key
+        assert "jamais d'insulte" in prompt, persona.key
+        assert "autodérision" in prompt, persona.key
+        assert "jamais de liste à puces" in prompt, persona.key
+
+
+def test_melenchon_prompt_is_actually_melenchon() -> None:
+    prompt = " ".join(load_persona("melenchon").lower().split())
+
+    assert "mélenchon" in prompt
+    assert "vie république" in prompt or "vie republique" in prompt
+    assert "france insoumise" in prompt
+    assert "lisnard" not in prompt  # pas de copier-coller residuel
+
+
+def test_clean_reply_strips_each_persona_own_name() -> None:
+    assert clean_reply("Jean-Luc Mélenchon : et voila.", "Jean-Luc Mélenchon") == "et voila."
+    assert clean_reply("Mélenchon — bref.", "Jean-Luc Mélenchon") == "bref."
+    # le nom d'un autre personnage ne doit pas etre retire
+    assert clean_reply("Lisnard a tort.", "Jean-Luc Mélenchon") == "Lisnard a tort."

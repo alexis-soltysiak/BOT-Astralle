@@ -1,14 +1,10 @@
+"""Extraction du contexte d'un salon Discord et nettoyage des reponses."""
+
 from __future__ import annotations
 
 import re
 
 import discord
-import structlog
-from discord import app_commands
-
-from app.features.lisnard.client import LisnardClient
-
-_LOG = structlog.get_logger("lisnard")
 
 _MAX_MESSAGE_CHARS = 400
 _MAX_EMBED_CHARS = 600
@@ -43,7 +39,7 @@ def _embed_text(embed: discord.Embed) -> str:
     Quand quelqu'un colle un lien Twitter/X, Bluesky, YouTube ou un article, le
     message lui-meme ne contient que l'URL : tout le contenu utile (auteur,
     texte du post, titre de l'article) vit dans l'embed genere par Discord.
-    Sans ca, Lisnard ne voit qu'une URL nue et ne peut pas rebondir dessus.
+    Sans ca, le personnage ne voit qu'une URL nue et ne peut pas rebondir dessus.
     """
     parts: list[str] = []
 
@@ -141,7 +137,7 @@ def build_transcript(messages: list[discord.Message]) -> str:
     return "\n".join(lines)
 
 
-async def _collect_history(
+async def collect_history(
     channel: discord.abc.Messageable,
     *,
     limit: int,
@@ -160,10 +156,17 @@ async def _collect_history(
     return collected
 
 
-_NAME_PREFIX = re.compile(r"^\s*(david\s+)?lisnard\s*[:\-–]\s*", re.IGNORECASE)
+def _name_prefix_pattern(display_name: str) -> re.Pattern[str]:
+    """Reconnait "Jean-Luc Melenchon :" aussi bien que "Melenchon -"."""
+    parts = [re.escape(part) for part in display_name.split() if part]
+    if not parts:
+        return re.compile(r"(?!)")
+    full = r"\s+".join(parts)
+    surname = parts[-1]
+    return re.compile(rf"^\s*(?:{full}|{surname})\s*[:\-–—]\s*", re.IGNORECASE)
 
 
-def clean_reply(text: str) -> str:
+def clean_reply(text: str, display_name: str = "") -> str:
     """Retire les artefacts de jeu de role qui trahiraient le bot.
 
     Les modeles ont tendance a prefixer par le nom du personnage ou a encadrer
@@ -171,7 +174,8 @@ def clean_reply(text: str) -> str:
     n'a ni l'un ni l'autre.
     """
     cleaned = text.strip()
-    cleaned = _NAME_PREFIX.sub("", cleaned)
+    if display_name:
+        cleaned = _name_prefix_pattern(display_name).sub("", cleaned)
 
     for opening, closing in (('"', '"'), ("«", "»"), ("“", "”"), ("'", "'")):
         if len(cleaned) > 1 and cleaned.startswith(opening) and cleaned.endswith(closing):
@@ -182,105 +186,7 @@ def clean_reply(text: str) -> str:
     return cleaned.strip()
 
 
-def _truncate_for_discord(text: str) -> str:
+def truncate_for_discord(text: str) -> str:
     if len(text) <= _DISCORD_LIMIT:
         return text
     return text[: _DISCORD_LIMIT - 1].rstrip() + "…"
-
-
-def register(
-    tree: app_commands.CommandTree,
-    lisnard: LisnardClient,
-    *,
-    history_limit: int = 25,
-    guild_id: int | None = None,
-) -> None:
-    """Scope la commande sur DISCORD_GUILD_ID quand il est renseigne.
-
-    Une commande de guild est publiee instantanement, la ou une commande
-    globale peut mettre jusqu'a une heure a se propager.
-
-    Le scope se passe par le parametre `guild` de tree.command, et surtout PAS
-    par un decorateur @app_commands.guilds place au-dessus : tree.command
-    enregistre la commande dans l'arbre des qu'il s'applique, donc un
-    decorateur pose au-dessus arrive trop tard et la commande part en global.
-    """
-    scope: dict = {} if guild_id is None else {"guild": discord.Object(id=guild_id)}
-
-    @tree.command(
-        name="lisnard",
-        description="David Lisnard donne son avis sur la conversation",
-        **scope,
-    )
-    async def lisnard_command(interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
-        if not lisnard.enabled:
-            await interaction.followup.send(
-                "Lisnard est desactive (LISNARD_ENABLED ou LLM_API_KEY manquant).",
-                ephemeral=True,
-            )
-            return
-
-        channel = interaction.channel
-        if channel is None or not isinstance(channel, discord.abc.Messageable):
-            await interaction.followup.send("Salon illisible.", ephemeral=True)
-            return
-
-        try:
-            messages = await _collect_history(
-                channel,
-                limit=history_limit,
-                exclude_id=None,
-            )
-        except discord.Forbidden:
-            await interaction.followup.send(
-                "Il me manque la permission Read Message History sur ce salon.",
-                ephemeral=True,
-            )
-            return
-
-        if not messages:
-            await interaction.followup.send(
-                "Aucun message lisible ici. Si le salon n'est pas vide, active le "
-                "Message Content Intent dans le Discord Developer Portal.",
-                ephemeral=True,
-            )
-            return
-
-        transcript = build_transcript(messages)
-        if not transcript.strip():
-            await interaction.followup.send(
-                "Aucun contenu texte lisible dans les derniers messages.",
-                ephemeral=True,
-            )
-            return
-
-        raw = await lisnard.generate(transcript)
-        reply = clean_reply(raw) if raw else ""
-        if not reply:
-            await interaction.followup.send(
-                "Pas de reponse du modele, reessaie.",
-                ephemeral=True,
-            )
-            return
-
-        try:
-            await channel.send(
-                _truncate_for_discord(reply),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-        except discord.Forbidden:
-            await interaction.followup.send(
-                "Il me manque la permission Send Messages sur ce salon.",
-                ephemeral=True,
-            )
-            return
-
-        _LOG.info(
-            "lisnard_replied",
-            guild_id=None if interaction.guild is None else interaction.guild.id,
-            channel_id=getattr(channel, "id", None),
-            messages_read=len(messages),
-        )
-        await interaction.followup.send("Envoye.", ephemeral=True)

@@ -12,8 +12,8 @@ from app.core.discord_client import build_intents
 from app.core.emoji_resolver import EmojiResolver
 from app.core.logging import configure_logging
 from app.features.discord_bindings.bootstrap import bootstrap_bindings
-from app.features.lisnard.client import LisnardClient
-from app.features.lisnard.commands import register as register_lisnard_commands
+from app.features.personas.client import PersonaClient
+from app.features.personas.commands import register as register_persona_commands
 from app.features.matches.commands import register as register_matches_commands
 from app.features.matches.analysis import MatchAnalysisClient
 from app.features.matches.publisher import run_outbox_publisher
@@ -25,8 +25,8 @@ from app.features.tracked_players.commands import register as register_tracked_p
 class App(discord.Client):
     def __init__(self, backend: BackendClient) -> None:
         settings = get_settings()
-        # /lisnard doit lire le texte des messages du salon
-        super().__init__(intents=build_intents(message_content=settings.lisnard_enabled))
+        # les commandes de personnages doivent lire le texte des messages du salon
+        super().__init__(intents=build_intents(message_content=settings.persona_enabled))
         self.backend = backend
         self.settings = settings
         self.log = structlog.get_logger("discord")
@@ -39,15 +39,15 @@ class App(discord.Client):
             model=self.settings.llm_model,
             timeout_seconds=self.settings.llm_timeout_seconds,
         )
-        self.lisnard = LisnardClient(
-            enabled=self.settings.lisnard_enabled,
+        self.personas = PersonaClient(
+            enabled=self.settings.persona_enabled,
             api_key=self.settings.llm_api_key,
             base_url=self.settings.llm_base_url,
-            model=self.settings.lisnard_model,
-            timeout_seconds=self.settings.lisnard_timeout_seconds,
-            web_search_enabled=self.settings.lisnard_web_search_enabled,
-            max_output_tokens=self.settings.lisnard_max_output_tokens,
-            reasoning_effort=self.settings.lisnard_reasoning_effort,
+            model=self.settings.persona_model,
+            timeout_seconds=self.settings.persona_timeout_seconds,
+            web_search_enabled=self.settings.persona_web_search_enabled,
+            max_output_tokens=self.settings.persona_max_output_tokens,
+            reasoning_effort=self.settings.persona_reasoning_effort,
         )
         self._publisher_task: asyncio.Task | None = None
         self._pinned_started = False
@@ -60,10 +60,10 @@ class App(discord.Client):
             guild_id=self.settings.discord_guild_id,
         )
         register_matches_commands(self.tree, self.backend)
-        register_lisnard_commands(
+        register_persona_commands(
             self.tree,
-            self.lisnard,
-            history_limit=self.settings.lisnard_history_limit,
+            self.personas,
+            history_limit=self.settings.persona_history_limit,
             guild_id=self.settings.discord_guild_id,
         )
 
@@ -271,7 +271,7 @@ async def run() -> None:
         await app.start(settings.discord_token)
     finally:
         await app.match_analyst.aclose()
-        await app.lisnard.aclose()
+        await app.personas.aclose()
         await backend.aclose()
 
 
