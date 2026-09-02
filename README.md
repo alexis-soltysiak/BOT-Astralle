@@ -87,10 +87,10 @@ La personnalite vit dans `discord/app/features/lisnard/persona.md` : c'est ce
 fichier qu'il faut editer pour ajuster le ton, les positions ou la longueur des
 reponses. Aucun redeploiement de code n'est necessaire au-dela d'un rebuild.
 
-La commande est enregistree en **global**, pas sur `DISCORD_GUILD_ID` : elle
-marche donc sur tous les serveurs ou le bot est invite, contrairement aux
-commandes LoL qui dependent d'un serveur precis. Discord peut mettre jusqu'a
-une heure a propager une commande globale nouvellement creee.
+La commande est scopee sur `DISCORD_GUILD_ID` quand il est renseigne, ce qui la
+rend disponible instantanement apres un redemarrage. Sans cette variable elle
+est enregistree en global, et Discord peut alors mettre jusqu'a une heure a la
+propager.
 
 Le bot a besoin sur chaque salon de View Channel, Read Message History et Send
 Messages. S'il lui en manque une, la commande repond en ephemere en disant

@@ -193,16 +193,21 @@ def register(
     lisnard: LisnardClient,
     *,
     history_limit: int = 25,
+    guild_id: int | None = None,
 ) -> None:
-    """Enregistre /lisnard en GLOBAL, volontairement.
+    """Scope la commande sur DISCORD_GUILD_ID quand il est renseigne.
 
-    Les autres commandes sont scopees sur DISCORD_GUILD_ID parce qu'elles
-    dependent du suivi LoL d'un serveur precis. /lisnard ne depend de rien :
-    elle doit marcher sur n'importe quel serveur ou le bot est invite. La
-    contrepartie est le delai de propagation Discord, qui peut aller jusqu'a
-    une heure apres un premier deploiement.
+    Une commande de guild est publiee instantanement, la ou une commande
+    globale peut mettre jusqu'a une heure a se propager. Sans guild_id, on
+    retombe sur un enregistrement global.
     """
+    guild_decorator = (
+        app_commands.guilds(discord.Object(id=guild_id))
+        if guild_id is not None
+        else (lambda command: command)
+    )
 
+    @guild_decorator
     @tree.command(name="lisnard", description="David Lisnard donne son avis sur la conversation")
     async def lisnard_command(interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
