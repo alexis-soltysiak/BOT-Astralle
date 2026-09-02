@@ -64,7 +64,6 @@ class App(discord.Client):
             self.tree,
             self.lisnard,
             history_limit=self.settings.lisnard_history_limit,
-            guild_id=self.settings.discord_guild_id,
         )
 
     async def _clear_bot_messages_in_channel(self, channel_id: int) -> int:

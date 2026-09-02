@@ -87,6 +87,15 @@ La personnalite vit dans `discord/app/features/lisnard/persona.md` : c'est ce
 fichier qu'il faut editer pour ajuster le ton, les positions ou la longueur des
 reponses. Aucun redeploiement de code n'est necessaire au-dela d'un rebuild.
 
+La commande est enregistree en **global**, pas sur `DISCORD_GUILD_ID` : elle
+marche donc sur tous les serveurs ou le bot est invite, contrairement aux
+commandes LoL qui dependent d'un serveur precis. Discord peut mettre jusqu'a
+une heure a propager une commande globale nouvellement creee.
+
+Le bot a besoin sur chaque salon de View Channel, Read Message History et Send
+Messages. S'il lui en manque une, la commande repond en ephemere en disant
+laquelle plutot que d'echouer en silence.
+
 Prerequis important : la commande a besoin du **Message Content Intent**, active
 dans le Discord Developer Portal (Applications > ton app > Bot > Privileged
 Gateway Intents). Sans lui, `discord.py` refuse de se connecter au demarrage et
