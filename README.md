@@ -77,6 +77,9 @@ Services exposes :
 
 ## Commandes de personnages
 
+`/help` affiche un sommaire de toutes les commandes, construit depuis le
+registre des personnages pour rester a jour tout seul.
+
 Six personnalites disposent chacune de leur commande : `/lisnard`,
 `/melenchon`, `/tondelier`, `/lepen`, `/knafo` et `/panot`. Chacune fait reagir
 un pastiche de la personne au dernier message du salon.
@@ -85,8 +88,21 @@ un pastiche de la personne au dernier message du salon.
 plateau est tire au sort a chaque appel, les prises de parole sont espacees de
 5 secondes, et chaque intervenant voit ce que les precedents ont dit : il ne
 repete pas, il repond ou change d'angle. Pour limiter la consommation, ce mode
-lit moins de messages (12 au lieu de 25) et coupe la recherche web, dont la
-seule definition d'outil coute plus de tokens que la fiche d'un personnage.
+lit moins de messages (12 au lieu de 25) et coupe la recherche web.
+
+### Recherche web conditionnelle
+
+La seule definition de l'outil `web_search` coute 4436 tokens d'entree, soit
+plus que la fiche d'un personnage : elle multiplie par environ quatre le cout
+d'un appel, meme quand aucune recherche n'a lieu (2,93 centimes contre 0,74).
+
+L'outil n'est donc attache que si les deux derniers messages du salon
+contiennent une URL nue, un marqueur de fraicheur (actualite, sondage, date,
+demission, proces, une annee) ou une demande de verification ("c'est vrai",
+"il parait", "combien"). Une URL dont Discord a deja fourni l'embed ne
+declenche rien : le contenu est deja dans le contexte.
+
+Le tri se fait dans `needs_web_search`, dans `transcript.py`.
 
 La commande lit les 25 derniers messages. Elle en extrait aussi le contenu des
 liens (embeds Twitter/X, articles, videos), les pieces jointes, et le fil des

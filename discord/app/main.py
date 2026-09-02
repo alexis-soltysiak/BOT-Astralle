@@ -12,11 +12,12 @@ from app.core.discord_client import build_intents
 from app.core.emoji_resolver import EmojiResolver
 from app.core.logging import configure_logging
 from app.features.discord_bindings.bootstrap import bootstrap_bindings
+from app.features.help.commands import register as register_help_command
+from app.features.matches.analysis import MatchAnalysisClient
+from app.features.matches.commands import register as register_matches_commands
+from app.features.matches.publisher import run_outbox_publisher
 from app.features.personas.client import PersonaClient
 from app.features.personas.commands import register as register_persona_commands
-from app.features.matches.commands import register as register_matches_commands
-from app.features.matches.analysis import MatchAnalysisClient
-from app.features.matches.publisher import run_outbox_publisher
 from app.features.pinned.leaderboard import ensure_leaderboard_message, refresh_leaderboard_message
 from app.features.pinned.live_games import ensure_live_message, refresh_live_message
 from app.features.tracked_players.commands import register as register_tracked_players
@@ -64,6 +65,11 @@ class App(discord.Client):
             self.tree,
             self.personas,
             history_limit=self.settings.persona_history_limit,
+            guild_id=self.settings.discord_guild_id,
+        )
+        register_help_command(
+            self.tree,
+            model=self.settings.persona_model,
             guild_id=self.settings.discord_guild_id,
         )
 

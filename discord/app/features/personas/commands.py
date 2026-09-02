@@ -13,6 +13,7 @@ from app.features.personas.transcript import (
     build_transcript,
     clean_reply,
     collect_history,
+    needs_web_search,
     truncate_for_discord,
 )
 from app.features.personas.webhooks import PersonaWebhooks
@@ -86,7 +87,10 @@ def _register_one(
             )
             return
 
-        raw = await client.generate(persona, transcript)
+        # L'outil web_search coute plus cher que la fiche du personnage : on ne
+        # l'attache que si le salon parle d'actualite ou demande une verification.
+        search = needs_web_search(transcript)
+        raw = await client.generate(persona, transcript, web_search=search)
         reply = clean_reply(raw, persona.display_name) if raw else ""
         if not reply:
             await interaction.followup.send("Pas de reponse du modele, reessaie.", ephemeral=True)
@@ -107,6 +111,7 @@ def _register_one(
             guild_id=None if interaction.guild is None else interaction.guild.id,
             channel_id=getattr(channel, "id", None),
             messages_read=len(messages),
+            web_search=search,
             impersonated=impersonated,
         )
         await interaction.followup.send(

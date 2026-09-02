@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import discord
 
@@ -190,3 +191,63 @@ def truncate_for_discord(text: str) -> str:
     if len(text) <= _DISCORD_LIMIT:
         return text
     return text[: _DISCORD_LIMIT - 1].rstrip() + "…"
+
+
+# --- Faut-il payer la recherche web sur cet appel ? -------------------------
+#
+# La seule definition de l'outil web_search coute 4436 tokens d'entree, soit
+# plus que la fiche d'un personnage : elle multiplie par ~4 le cout d'un appel,
+# y compris quand aucune recherche n'a lieu. Mesure faite sur cinq scenarios,
+# le modele ne cherche que sur les questions d'actualite verifiable. On ne lui
+# attache donc l'outil que quand le salon a l'air d'en avoir besoin.
+
+_URL_RE = re.compile(r"https?://", re.IGNORECASE)
+
+# Marqueurs de fraicheur : on parle de quelque chose de date ou de recent.
+_FRESHNESS_RE = re.compile(
+    r"\b("
+    r"aujourd\s*hui|hier|avant-?hier|ce matin|ce soir|cette semaine|ce mois|"
+    r"en ce moment|actuellement|recemment|recent[e]?s?|"
+    r"actu|actualites?|news|infos?|"
+    r"sondages?|elections?|resultats?|scrutin|"
+    r"annonces?|a annonce|vient de|a declare|a dit que|"
+    r"demission|remaniement|proces|jugement|verdict|condamn\w*|"
+    r"20(?:2[4-9]|3\d)"
+    r")\b"
+)
+
+# Marqueurs de verification : on demande si un fait est exact.
+_FACT_CHECK_RE = re.compile(
+    r"("
+    r"c\s*est vrai|il parait|parait[- ]il|vraiment vrai|"
+    r"\bcombien\b|depuis quand|qui a gagne|"
+    r"\bverifi\w*|\bsource\b|\bfake\b|\bintox\b"
+    r")"
+)
+
+
+def _strip_accents(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+
+
+def _recent_lines(transcript: str, count: int = 2) -> str:
+    """Les derniers messages du salon, marqueur exclu.
+
+    On regarde deux messages et pas un seul : un lien est souvent colle par
+    quelqu'un puis commente par un autre ("ca dit quoi ?").
+    """
+    lines = [
+        line
+        for line in transcript.splitlines()
+        if line.strip() and not line.lstrip().startswith(">>>")
+    ]
+    return "\n".join(lines[-count:])
+
+
+def needs_web_search(transcript: str) -> bool:
+    """Vrai si les derniers messages appellent une info fraiche ou verifiable."""
+    window = _strip_accents(_recent_lines(transcript)).lower()
+    return bool(
+        _URL_RE.search(window) or _FRESHNESS_RE.search(window) or _FACT_CHECK_RE.search(window)
+    )

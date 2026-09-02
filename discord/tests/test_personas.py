@@ -402,3 +402,117 @@ def test_with_prior_replies_appends_what_was_already_said() -> None:
     assert "David Lisnard: Non." in out
     assert "Sarah Knafo: 12 %." in out
     assert "Ne repete pas" in out
+
+
+# --- porte d'activation de la recherche web ---------------------------------
+
+
+def _t(*lines: str) -> str:
+    """Construit un transcript, marqueur insere avant le dernier message."""
+    from app.features.personas.transcript import _LAST_MARKER
+
+    body = list(lines)
+    return "\n".join(body[:-1] + [_LAST_MARKER, body[-1]])
+
+
+def test_web_search_stays_off_for_banter() -> None:
+    from app.features.personas.transcript import needs_web_search
+
+    assert not needs_web_search(_t("alex: bob a feed", "bob: j'ai 12 morts mais je carry"))
+    assert not needs_web_search(_t("bob: on lance une ranked ?", "alex: pas Yasuo stp"))
+    assert not needs_web_search(
+        _t("Atro: mon fils de pute est amical", "Rampiece: Hahahaha tout va bien")
+    )
+
+
+def test_web_search_stays_off_for_a_timeless_debate() -> None:
+    from app.features.personas.transcript import needs_web_search
+
+    assert not needs_web_search(
+        _t(
+            "Rampiece: si t'es pas top2 ca change rien",
+            "Klynn: voter pour un mec a 5% ca montre de l'interet pour ses idees",
+        )
+    )
+
+
+def test_web_search_fires_on_datable_news() -> None:
+    from app.features.personas.transcript import needs_web_search
+
+    assert needs_web_search(_t("Atro: le proces", "Klynn: elle peut se presenter en 2027 ?"))
+    assert needs_web_search(_t("x: alors", "y: ils ont donne les resultats du scrutin ?"))
+    assert needs_web_search(_t("x: bon", "y: il a fait combien au premier tour"))
+
+
+def test_web_search_fires_on_a_fact_check_request() -> None:
+    from app.features.personas.transcript import needs_web_search
+
+    assert needs_web_search(_t("x: y a un truc", "y: il parait qu'il est passe devant, c'est vrai ?"))
+
+
+def test_web_search_ignores_accents() -> None:
+    from app.features.personas.transcript import needs_web_search
+
+    assert needs_web_search(_t("x: rien", "y: t'as vu l'actualité récente sur la démission ?"))
+
+
+def test_web_search_fires_on_a_bare_url_but_not_on_an_extracted_embed() -> None:
+    """Une URL nue demande une recherche ; un embed deja extrait, non.
+
+    Quand Discord a fourni le contenu du lien, il est deja dans le contexte :
+    chercher serait redondant et couterait le prix fort pour rien.
+    """
+    from app.features.personas.transcript import needs_web_search
+
+    assert needs_web_search(_t("Shelby: https://www.lemonde.fr/a.html", "alex: ca dit quoi ?"))
+    assert not needs_web_search(
+        _t("Shelby: lien [contenu du lien -> Le Monde | un titre complet]", "alex: mdr")
+    )
+
+
+def test_web_search_only_looks_at_the_recent_window() -> None:
+    """Un lien poste il y a longtemps ne doit pas declencher une recherche."""
+    from app.features.personas.transcript import needs_web_search
+
+    assert not needs_web_search(
+        _t("x: https://truc.fr", "y: ok", "z: bon", "w: passe moi le sel")
+    )
+
+
+# --- /help ------------------------------------------------------------------
+
+
+def test_help_embed_lists_every_persona_and_stays_in_sync() -> None:
+    """Le sommaire vient du registre : un nouveau personnage doit y apparaitre seul."""
+    from app.features.help.commands import build_help_embed
+
+    embed = build_help_embed(model="gpt-5.6-terra")
+    blob = " ".join(f"{f.name} {f.value}" for f in embed.fields)
+
+    for persona in PERSONAS:
+        assert f"/{persona.command}" in blob, persona.key
+        assert persona.display_name in blob, persona.key
+    assert "/sphere" in blob
+    assert "gpt-5.6-terra" in (embed.footer.text or "")
+
+
+def test_help_embed_respects_discord_size_limits() -> None:
+    from app.features.help.commands import build_help_embed
+
+    embed = build_help_embed(model="gpt-5.6-terra")
+
+    assert len(embed) <= 6000  # limite globale d'un embed
+    assert len(embed.fields) <= 25
+    for field in embed.fields:
+        assert len(field.name or "") <= 256
+        assert len(field.value or "") <= 1024
+
+
+def test_help_embed_says_the_replies_are_generated() -> None:
+    """Les pastiches doivent etre annonces comme tels quelque part."""
+    from app.features.help.commands import build_help_embed
+
+    blob = " ".join(f.value for f in build_help_embed(model="x").fields).lower()
+
+    assert "pastiche" in blob
+    assert "pas de vraies déclarations" in blob
