@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         "gpt-5.6-terra", validation_alias=AliasChoices("PERSONA_MODEL", "LISNARD_MODEL")
     )
     persona_history_limit: int = Field(
-        25, validation_alias=AliasChoices("PERSONA_HISTORY_LIMIT", "LISNARD_HISTORY_LIMIT")
+        40, validation_alias=AliasChoices("PERSONA_HISTORY_LIMIT", "LISNARD_HISTORY_LIMIT")
     )
     persona_timeout_seconds: float = Field(
         120.0, validation_alias=AliasChoices("PERSONA_TIMEOUT_SECONDS", "LISNARD_TIMEOUT_SECONDS")

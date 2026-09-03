@@ -80,15 +80,22 @@ Services exposes :
 `/help` affiche un sommaire de toutes les commandes, construit depuis le
 registre des personnages pour rester a jour tout seul.
 
-Six personnalites disposent chacune de leur commande : `/lisnard`,
-`/melenchon`, `/tondelier`, `/lepen`, `/knafo` et `/panot`. Chacune fait reagir
-un pastiche de la personne au dernier message du salon.
+Huit personnalites disposent chacune de leur commande : `/lisnard`,
+`/melenchon`, `/tondelier`, `/lepen`, `/knafo`, `/panot`, `/trump` et
+`/poutine`. Chacune fait reagir un pastiche de la personne au dernier message
+du salon.
+
+Face a une provocation, un personnage ne refuse jamais de facon visible : il
+pivote vers une question voisine qu'il avait envie de traiter. Un refus
+explicite se repere immediatement et casse l'illusion. Les figures les plus
+exposees portent en plus une section de limites explicites dans leur fiche, et
+des tests verifient qu'elle est bien la.
 
 `/sphere <nombre>` fait intervenir plusieurs d'entre elles a la suite. Le
 plateau est tire au sort a chaque appel, les prises de parole sont espacees de
 5 secondes, et chaque intervenant voit ce que les precedents ont dit : il ne
 repete pas, il repond ou change d'angle. Pour limiter la consommation, ce mode
-lit moins de messages (12 au lieu de 25) et coupe la recherche web.
+lit moins de messages (12 au lieu de 40) et coupe la recherche web.
 
 ### Recherche web conditionnelle
 
@@ -150,7 +157,7 @@ Variables associees :
 
 - `PERSONA_ENABLED` : coupe les commandes et l'intent privilegie
 - `PERSONA_MODEL` : modele OpenAI utilise (defaut `gpt-5.6-terra`)
-- `PERSONA_HISTORY_LIMIT` : nombre de messages lus (defaut 25)
+- `PERSONA_HISTORY_LIMIT` : nombre de messages lus (defaut 40)
 - `PERSONA_WEB_SEARCH_ENABLED` : autorise la recherche web
 - `PERSONA_MAX_OUTPUT_TOKENS` : plafond qui couvre aussi les tokens de raisonnement
 - `PERSONA_REASONING_EFFORT` : `minimal`, `low`, `medium` ou `high`

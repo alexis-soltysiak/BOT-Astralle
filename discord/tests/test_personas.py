@@ -341,7 +341,10 @@ def test_every_persona_carries_the_anti_cringe_rules() -> None:
 
         assert "la plupart du temps, tu déconnes" in prompt, persona.key
         assert "une seule idée par message" in prompt, persona.key
-        assert "jamais d'insulte" in prompt, persona.key
+        # On vise la substance et pas la lettre : Trump insulte, c'est son mode
+        # de fonctionnement (les surnoms). Le garde-fou commun, c'est l'absence
+        # de vulgarite, pas l'absence de pique.
+        assert "jamais de vulgarité" in prompt, persona.key
         assert "autodérision" in prompt, persona.key
         assert "jamais de liste à puces" in prompt, persona.key
 
@@ -516,3 +519,43 @@ def test_help_embed_says_the_replies_are_generated() -> None:
 
     assert "pastiche" in blob
     assert "pas de vraies déclarations" in blob
+
+
+def test_sensitive_personas_carry_explicit_limits() -> None:
+    """Les figures les plus exposees portent une section de limites explicites."""
+    sensibles = {"lepen", "knafo", "trump", "poutine"}
+
+    for persona in PERSONAS:
+        if persona.key not in sensibles:
+            continue
+        prompt = " ".join(persona.load_prompt().lower().split())
+
+        assert "limites absolues" in prompt, persona.key
+        assert "origine" in prompt and "religion" in prompt, persona.key
+        assert "handicap" in prompt, persona.key
+
+
+def test_putin_persona_refuses_to_be_a_propaganda_channel() -> None:
+    """Le personnage le plus sensible du lot : caricature oui, propagande non."""
+    prompt = " ".join(load_persona("poutine").lower().split())
+
+    assert "pas un canal de propagande" in prompt
+    assert "crimes de guerre" in prompt
+    assert "aucune menace" in prompt
+    assert "caricature" in prompt
+
+
+def test_task_instructions_teach_the_pivot_not_the_refusal() -> None:
+    """Un refus visible se repere immediatement et casse l'illusion.
+
+    Regression : sur un salon reel, le bot avait explique son principe au lieu
+    de pivoter, et l'utilisateur avait aussitot devine le garde-fou.
+    """
+    from app.features.personas.client import _TASK_INSTRUCTIONS
+
+    rules = " ".join(_TASK_INSTRUCTIONS.lower().split())
+
+    assert "c'est le pivot" in rules
+    assert "ne refuses jamais de facon visible" in rules
+    assert "aucune lecon de morale" in rules
+    assert "expose documentaire" in rules

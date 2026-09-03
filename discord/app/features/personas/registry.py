@@ -81,4 +81,20 @@ PERSONAS: tuple[Persona, ...] = (
         profile="panot.md",
         avatar="panot.jpg",
     ),
+    Persona(
+        key="trump",
+        command="trump",
+        display_name="Donald Trump",
+        description="Donald Trump donne son avis sur la conversation",
+        profile="trump.md",
+        avatar="trump.jpg",
+    ),
+    Persona(
+        key="poutine",
+        command="poutine",
+        display_name="Vladimir Poutine",
+        description="Vladimir Poutine donne son avis sur la conversation",
+        profile="poutine.md",
+        avatar="poutine.jpg",
+    ),
 )
