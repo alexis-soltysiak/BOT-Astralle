@@ -85,10 +85,15 @@ Huit personnalites disposent chacune de leur commande : `/lisnard`,
 `/poutine`. Chacune fait reagir un pastiche de la personne au dernier message
 du salon.
 
-Le dernier message est le point d'entree, pas le sujet. Le sujet est celui qui
-occupe le plus de messages au-dessus. Quand les derniers messages derivent en
-vanne ou en bavardage sur le salon lui-meme, le personnage s'en sert comme
-tremplin et ramene la conversation sur le fond, au lieu de suivre la digression.
+Le dernier message declenche la reponse mais n'est pas forcement le sujet. Si
+c'est une question, le personnage y repond. Si ce n'est qu'une reaction ou du
+bavardage sur le salon lui-meme, il remonte : la vraie question est souvent
+plusieurs messages plus haut, sous une serie de "mdr".
+
+Il peut reprendre un argument pose par quelqu'un d'autre en le nommant, et
+s'adresser a plusieurs personnes dans le meme message — le balayage en plateau,
+ou chaque cible prend quelque chose. Ce qui reste interdit, c'est le compte
+rendu neutre qui distribue des bons points sans viser personne.
 
 Face a une provocation, un personnage ne refuse jamais de facon visible : il
 pivote vers une question voisine qu'il avait envie de traiter. Un refus

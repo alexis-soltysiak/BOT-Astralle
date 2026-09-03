@@ -561,6 +561,34 @@ def test_task_instructions_teach_the_pivot_not_the_refusal() -> None:
     assert "expose documentaire" in rules
 
 
+def test_task_instructions_allow_addressing_several_people() -> None:
+    """Le balayage en plateau est une vraie figure : on l'autorise explicitement.
+
+    Interdire toute reponse multiple bloquait le "l'un decouvre ceci, l'autre
+    cela" qui est le registre naturel d'un debat politique.
+    """
+    from app.features.personas.client import _TASK_INSTRUCTIONS
+
+    rules = " ".join(_TASK_INSTRUCTIONS.lower().split())
+
+    assert "t'adresser a plusieurs personnes dans le meme message" in rules
+    assert "renvoi en plateau" in rules
+    assert "nomme-la" in rules
+    # mais chaque cible doit prendre quelque chose, sinon c'est un resume
+    assert "chacune doit prendre quelque chose" in rules
+    assert "un seul angle d'attaque" in rules
+
+
+def test_task_instructions_can_reuse_an_earlier_argument() -> None:
+    """Le meilleur argument du salon ne vient pas toujours du dernier a parler."""
+    from app.features.personas.client import _TASK_INSTRUCTIONS
+
+    rules = " ".join(_TASK_INSTRUCTIONS.lower().split())
+
+    assert "argument formule par quelqu'un d'autre plus haut" in rules
+    assert "la vraie question est souvent deux ou trois messages plus haut" in rules
+
+
 def test_task_instructions_separate_the_trigger_from_the_topic() -> None:
     """Regression : le bot s'enfermait dans le dernier message.
 
@@ -572,9 +600,10 @@ def test_task_instructions_separate_the_trigger_from_the_topic() -> None:
 
     rules = " ".join(_TASK_INSTRUCTIONS.lower().split())
 
-    assert "point d'entree" in rules
-    assert "le vrai sujet, c'est celui qui occupe le plus de messages" in rules
+    assert "si c'est une question" in rules
+    assert "le sujet, c'est ce qui occupe le plus de messages" in rules
     assert "bavardage sur le salon lui-meme" in rules
     assert "tremplin" in rules
-    # le garde-fou inverse doit rester : pas de resume de la conversation
-    assert "jamais une synthese de la conversation" in rules
+    # le garde-fou inverse doit rester : pas de compte rendu neutre
+    assert "ce qui reste interdit, c'est le compte rendu" in rules
+    assert "resumer la conversation" in rules
