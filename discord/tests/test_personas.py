@@ -559,3 +559,22 @@ def test_task_instructions_teach_the_pivot_not_the_refusal() -> None:
     assert "ne refuses jamais de facon visible" in rules
     assert "aucune lecon de morale" in rules
     assert "expose documentaire" in rules
+
+
+def test_task_instructions_separate_the_trigger_from_the_topic() -> None:
+    """Regression : le bot s'enfermait dans le dernier message.
+
+    Sur un salon reel, un debat sur le voile a derape en vanne sur le salon
+    lui-meme, et le personnage a repondu sur le chomage etudiant en oubliant
+    completement le sujet de fond.
+    """
+    from app.features.personas.client import _TASK_INSTRUCTIONS
+
+    rules = " ".join(_TASK_INSTRUCTIONS.lower().split())
+
+    assert "point d'entree" in rules
+    assert "le vrai sujet, c'est celui qui occupe le plus de messages" in rules
+    assert "bavardage sur le salon lui-meme" in rules
+    assert "tremplin" in rules
+    # le garde-fou inverse doit rester : pas de resume de la conversation
+    assert "jamais une synthese de la conversation" in rules

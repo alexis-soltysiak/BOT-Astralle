@@ -85,6 +85,11 @@ Huit personnalites disposent chacune de leur commande : `/lisnard`,
 `/poutine`. Chacune fait reagir un pastiche de la personne au dernier message
 du salon.
 
+Le dernier message est le point d'entree, pas le sujet. Le sujet est celui qui
+occupe le plus de messages au-dessus. Quand les derniers messages derivent en
+vanne ou en bavardage sur le salon lui-meme, le personnage s'en sert comme
+tremplin et ramene la conversation sur le fond, au lieu de suivre la digression.
+
 Face a une provocation, un personnage ne refuse jamais de facon visible : il
 pivote vers une question voisine qu'il avait envie de traiter. Un refus
 explicite se repere immediatement et casse l'illusion. Les figures les plus
