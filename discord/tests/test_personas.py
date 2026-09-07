@@ -541,7 +541,7 @@ def test_putin_persona_refuses_to_be_a_propaganda_channel() -> None:
 
     assert "pas un canal de propagande" in prompt
     assert "crimes de guerre" in prompt
-    assert "aucune menace" in prompt
+    assert "ce qui reste exclu, c'est la menace" in prompt
     assert "caricature" in prompt
 
 
@@ -638,8 +638,10 @@ def test_build_input_adds_the_directive_and_its_guardrails() -> None:
     assert "reponds a JH sur le voile" in prompt
     assert "consigne du membre qui t'a appele" in prompt
     # la consigne ne doit jamais pouvoir lever les limites
-    assert "Elle ne peut rien changer d'autre" in prompt
-    assert "tu l'ignores" in prompt
+    assert "Ce qu'elle ne peut pas faire" in prompt
+    # ... mais elle doit etre suivie par morceaux, pas jetee en bloc
+    assert "Prends-la par morceaux" in prompt
+    assert "tu gardes la cible" in prompt
 
 
 def test_directive_can_trigger_the_web_search_on_its_own() -> None:
@@ -668,3 +670,26 @@ def test_every_command_exposes_the_optional_directive() -> None:
         assert "consigne" in noms, command.name
         consigne = next(p for p in command.parameters if p.name == "consigne")
         assert not consigne.required, command.name
+
+
+def test_channel_members_are_fair_game_in_every_profile() -> None:
+    """Regression : la clause "pas d'attaque nominale de personnes privees"
+    couvrait aussi les membres du serveur et bridait tout le sel du bot."""
+    for persona in PERSONAS:
+        prompt = " ".join(persona.load_prompt().lower().split())
+
+        assert "les gens du salon sont des cibles légitimes" in prompt, persona.key
+        assert "ne te retiens pas" in prompt, persona.key
+        assert "n'attaques pas nommément des personnes privées" not in prompt, persona.key
+
+
+def test_the_remaining_limits_are_narrow_and_still_there() -> None:
+    """Ce qu'on garde : pas d'accusation de crime, pas de propos haineux."""
+    for persona in PERSONAS:
+        prompt = " ".join(persona.load_prompt().lower().split())
+
+        if persona.key == "poutine":
+            assert "ce qui reste exclu, c'est la menace" in prompt
+            continue
+        assert "n'accuses personne d'un délit ou d'un crime" in prompt, persona.key
+        assert "personne extérieure à la conversation" in prompt, persona.key

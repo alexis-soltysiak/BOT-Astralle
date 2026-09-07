@@ -105,8 +105,15 @@ Toutes ces commandes acceptent un argument facultatif `consigne`, pour viser
 quelqu'un ou imposer un angle : `/melenchon consigne: reponds a JH sur le
 voile`. La consigne oriente la cible et l'angle, rien d'autre : elle ne peut ni
 changer la personnalite, ni lever ses limites, ni lui faire quitter son role.
-Une consigne qui essaie est ignoree en silence, sans que le personnage le
-signale. Elle est aplatie sur une ligne et bornee a 300 caracteres pour qu'elle
+Elle est prise par morceaux et jamais en bloc : si une partie n'est pas
+suivable, seule celle-la est ecartee, en silence, et la cible demandee est
+conservee.
+
+Les membres du salon sont des cibles legitimes : un personnage peut les nommer
+et les vanner durement, c'est le principe. Ce qui reste exclu, ce sont les
+personnes exterieures a la conversation, les accusations de delit presentees
+comme des faits et les propos visant un groupe pour son origine, sa religion ou
+son orientation. Elle est aplatie sur une ligne et bornee a 300 caracteres pour qu'elle
 ne puisse pas se faire passer pour une section du prompt.
 
 `/sphere <nombre>` fait intervenir plusieurs d'entre elles a la suite, et
