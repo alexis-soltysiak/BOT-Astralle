@@ -101,7 +101,16 @@ explicite se repere immediatement et casse l'illusion. Les figures les plus
 exposees portent en plus une section de limites explicites dans leur fiche, et
 des tests verifient qu'elle est bien la.
 
-`/sphere <nombre>` fait intervenir plusieurs d'entre elles a la suite. Le
+Toutes ces commandes acceptent un argument facultatif `consigne`, pour viser
+quelqu'un ou imposer un angle : `/melenchon consigne: reponds a JH sur le
+voile`. La consigne oriente la cible et l'angle, rien d'autre : elle ne peut ni
+changer la personnalite, ni lever ses limites, ni lui faire quitter son role.
+Une consigne qui essaie est ignoree en silence, sans que le personnage le
+signale. Elle est aplatie sur une ligne et bornee a 300 caracteres pour qu'elle
+ne puisse pas se faire passer pour une section du prompt.
+
+`/sphere <nombre>` fait intervenir plusieurs d'entre elles a la suite, et
+accepte la meme consigne pour donner un sujet au plateau. Le
 plateau est tire au sort a chaque appel, les prises de parole sont espacees de
 5 secondes, et chaque intervenant voit ce que les precedents ont dit : il ne
 repete pas, il repond ou change d'angle. Pour limiter la consommation, ce mode

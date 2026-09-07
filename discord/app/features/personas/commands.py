@@ -7,7 +7,11 @@ import discord
 import structlog
 from discord import app_commands
 
-from app.features.personas.client import PersonaClient, with_prior_replies
+from app.features.personas.client import (
+    PersonaClient,
+    sanitize_directive,
+    with_prior_replies,
+)
 from app.features.personas.registry import PERSONAS, Persona
 from app.features.personas.transcript import (
     build_transcript,
@@ -47,7 +51,10 @@ def _register_one(
     scope: dict = {} if guild_id is None else {"guild": discord.Object(id=guild_id)}
 
     @tree.command(name=persona.command, description=persona.description, **scope)
-    async def _command(interaction: discord.Interaction) -> None:
+    @app_commands.describe(
+        consigne="Optionnel : oriente la reponse, ex. \"reponds a JH sur le voile\""
+    )
+    async def _command(interaction: discord.Interaction, consigne: str | None = None) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not client.enabled:
@@ -87,10 +94,14 @@ def _register_one(
             )
             return
 
+        directive = sanitize_directive(consigne)
+
         # L'outil web_search coute plus cher que la fiche du personnage : on ne
-        # l'attache que si le salon parle d'actualite ou demande une verification.
-        search = needs_web_search(transcript)
-        raw = await client.generate(persona, transcript, web_search=search)
+        # l'attache que si le salon, ou la consigne, parle d'actualite.
+        search = needs_web_search(transcript, directive)
+        raw = await client.generate(
+            persona, transcript, web_search=search, directive=directive
+        )
         reply = clean_reply(raw, persona.display_name) if raw else ""
         if not reply:
             await interaction.followup.send("Pas de reponse du modele, reessaie.", ephemeral=True)
@@ -112,6 +123,7 @@ def _register_one(
             channel_id=getattr(channel, "id", None),
             messages_read=len(messages),
             web_search=search,
+            guided=bool(directive),
             impersonated=impersonated,
         )
         await interaction.followup.send(
@@ -145,8 +157,15 @@ def _register_sphere(
         description="Fait reagir plusieurs personnalites politiques a la suite",
         **scope,
     )
-    @app_commands.describe(nombre=f"Combien de personnalites repondent (2 a {maximum})")
-    async def sphere(interaction: discord.Interaction, nombre: int = 3) -> None:
+    @app_commands.describe(
+        nombre=f"Combien de personnalites repondent (2 a {maximum})",
+        consigne='Optionnel : oriente le plateau, ex. "debattez du vote utile"',
+    )
+    async def sphere(
+        interaction: discord.Interaction,
+        nombre: int = 3,
+        consigne: str | None = None,
+    ) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not client.enabled:
@@ -185,6 +204,7 @@ def _register_sphere(
             )
             return
 
+        directive = sanitize_directive(consigne)
         panel = pick_panel(nombre)
         await interaction.followup.send(
             f"Le plateau arrive : {', '.join(p.display_name for p in panel)}.",
@@ -203,6 +223,7 @@ def _register_sphere(
                 persona,
                 with_prior_replies(transcript, said),
                 web_search=False,
+                directive=directive,
             )
             reply = clean_reply(raw, persona.display_name) if raw else ""
             if not reply:
@@ -223,6 +244,7 @@ def _register_sphere(
             channel_id=getattr(channel, "id", None),
             asked=nombre,
             answered=len(said),
+            guided=bool(directive),
             panel=[p.key for p in panel],
         )
 
