@@ -43,9 +43,21 @@ def build_help_embed(*, model: str, icon_url: str | None = None) -> discord.Embe
         name="🎭  Faire réagir une personnalité",
         value=(
             f"{_persona_lines()}\n\n"
-            "Chacune lit les 25 derniers messages du salon, comprend les liens "
-            "partagés et les fils de réponses, puis rebondit sur le dernier "
-            "message. Elle répond avec son nom et sa photo."
+            "Chacune lit les 40 derniers messages du salon, comprend les liens "
+            "partagés et les fils de réponses, puis rebondit sur ce qui se dit. "
+            "Elle répond avec son nom et sa photo."
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="🎯  Orienter la réponse",
+        value=(
+            "Toutes les commandes acceptent une `consigne` facultative, pour "
+            "viser quelqu'un ou imposer un angle.\n"
+            "`/melenchon consigne: réponds à JH sur le voile`\n"
+            "`/lisnard consigne: reprends l'argument d'Avok`\n\n"
+            "Sans elle, la personnalité choisit seule sa cible."
         ),
         inline=False,
     )
@@ -53,7 +65,7 @@ def build_help_embed(*, model: str, icon_url: str | None = None) -> discord.Embe
     embed.add_field(
         name="🗳️  Lancer un plateau",
         value=(
-            f"`/sphere` `nombre:2-{maximum}`\n"
+            f"`/sphere` `nombre:2-{maximum}` `consigne:` *(facultative)*\n"
             "Plusieurs personnalités interviennent à la suite, espacées de 5 "
             "secondes. Le plateau est tiré au sort à chaque fois, et chacune "
             "voit ce que les précédentes ont dit — elles se répondent au lieu "

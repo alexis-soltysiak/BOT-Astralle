@@ -245,9 +245,16 @@ def _recent_lines(transcript: str, count: int = 2) -> str:
     return "\n".join(lines[-count:])
 
 
-def needs_web_search(transcript: str) -> bool:
-    """Vrai si les derniers messages appellent une info fraiche ou verifiable."""
-    window = _strip_accents(_recent_lines(transcript)).lower()
+def needs_web_search(transcript: str, directive: str = "") -> bool:
+    """Vrai si les derniers messages appellent une info fraiche ou verifiable.
+
+    La consigne eventuelle est analysee elle aussi : "parle du dernier sondage"
+    doit activer la recherche meme si le salon n'en parlait pas.
+    """
+    window = _recent_lines(transcript)
+    if directive:
+        window = window + "\n" + directive
+    window = _strip_accents(window).lower()
     return bool(
         _URL_RE.search(window) or _FRESHNESS_RE.search(window) or _FACT_CHECK_RE.search(window)
     )
